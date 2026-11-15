@@ -1,4 +1,8 @@
+<a href="https://muhammadluqman-99.github.io/ro-sim/"><img src="docs/banner.webp" width="100%" alt="Ragnarok: The New World SEA Spend Simulator, created by IkanAI"></a>
+
 # ro-sim
+
+**Live: https://muhammadluqman-99.github.io/ro-sim/** · created by **IkanAI** (IGN, Ragnarok: The New World SEA)
 
 Luqman's own tool for **Ragnarok: The New World (SEA)**: see what cards and gear
 really give, and what a refine goal costs in RM, before spending money in game.
