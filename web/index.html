@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RO New World SEA · Spend Simulator</title>
-  <meta name="description" content="Fan-made spend simulator for Ragnarok: The New World (SEA). See refine cost in ringgit, damage from cards and gear, heals and party buffs, card fusion odds and shop prices before you top up.">
+  <meta name="description" content="Fan-made spend simulator for Ragnarok: The New World (SEA). See refine cost in real money (RM, ฿, S$, Rp, ₱), damage from cards and gear, heals and party buffs, card fusion odds and shop prices before you top up.">
   <meta name="theme-color" content="#1d4ed8">
   <meta property="og:type" content="website">
   <meta property="og:title" content="RO New World SEA · Spend Simulator">
-  <meta property="og:description" content="Refine cost in RM, damage, support heals, card fusion odds and shop prices. Fan-made by IkanAI.">
+  <meta property="og:description" content="Refine cost in your own currency, damage, support heals, card fusion odds and shop prices. Fan-made by IkanAI.">
   <meta property="og:image" content="https://ro-sim.vercel.app/og.jpg">
   <meta property="og:url" content="https://ro-sim.vercel.app/">
   <meta property="og:image:width" content="1200">
@@ -23,7 +23,7 @@
       <div class="hero-text">
         <div class="hero-kicker">Ragnarok: The New World · SEA</div>
         <h1>Spend <span>Simulator</span></h1>
-        <p>See what cards, gear and refines really cost in ringgit, before you top up.</p>
+        <p>See what cards, gear and refines really cost in real money (RM, ฿, S$, Rp, ₱), before you top up.</p>
         <div class="hero-links">
           <span class="hero-by">Created by <b>IkanAI</b> <span class="ign">IGN</span></span>
           <a class="btn btn-gh" href="https://github.com/MuhammadLuqman-99" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> MuhammadLuqman-99</a>
@@ -53,11 +53,12 @@
       <button data-tab="fusion">Fusion</button>
       <button data-tab="cards">Cards</button>
       <button data-tab="gear">Gear</button>
-      <button data-tab="shop">Shop in RM</button>
+      <button data-tab="shop">Shop in <span class="cur-sym">RM</span></button>
     </nav>
-    <label class="rate">RM per Starstone
-      <input id="rm-per-star" type="number" step="0.0001" min="0">
-    </label>
+    <div class="rate">
+      <select id="currency" aria-label="Where you top up"></select>
+      <label><span class="cur-sym">RM</span> per Starstone <input id="rm-per-star" type="number" step="any" min="0"></label>
+    </div>
   </header>
 
   <main>
@@ -67,7 +68,7 @@
         <label>From <select name="from"></select></label>
         <label>To <select name="to"></select></label>
         <label>Runs <select name="runs"><option>5000</option><option selected>20000</option><option>50000</option></select></label>
-        <label>Budget (RM) <input name="budget" type="number" min="0" step="10" value="200"></label>
+        <label><span>Budget (<span class="cur-sym">RM</span>)</span> <input name="budget" type="number" min="0" step="10" value="200" autocomplete="off"></label>
         <fieldset>
           <legend>Already in bag</legend>
           <label>Oridecon <input name="own-Oridecon" type="number" min="0" value="0"></label>
@@ -95,7 +96,7 @@
         <li><span><b>Set up</b> your job and the monster you hit</span></li>
         <li><span><b>Type</b> your character screen stats (and any buffs)</span></li>
         <li><span><b>Change</b> a slot: Now = what you wear there, Plan = what you'd put in</span></li>
-        <li><span><b>Read</b> the % change and what it costs in RM</span></li>
+        <li><span><b>Read</b> the % change and what it costs in real money</span></li>
       </ol>
       <form id="build-form" class="controls">
         <label>Job <input type="hidden" name="job" value="">
@@ -217,7 +218,7 @@
         <li><span><b>Pick</b> the slot, your main card and the card you will feed it</span></li>
         <li><span><b>Set</b> the affixes each card has now</span></li>
         <li><span><b>Choose</b> the affix you want, and a lock if both cards are the same quality</span></li>
-        <li><span><b>Read</b> your chance per fusion and the RM it takes on average</span></li>
+        <li><span><b>Read</b> your chance per fusion and what it costs on average</span></li>
       </ol>
       <form id="fusion-form" class="controls">
         <label>Slot <select name="slot"></select></label>

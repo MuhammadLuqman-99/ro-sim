@@ -5,25 +5,25 @@
 **Live: https://muhammadluqman-99.github.io/ro-sim/** · created by **IkanAI** (IGN, Ragnarok: The New World SEA)
 
 Luqman's own tool for **Ragnarok: The New World (SEA)**: see what cards and gear
-really give, and what a refine goal costs in RM, before spending money in game.
+really give, and what a refine goal costs in real money (RM, ฿, S$, Rp, ₱ or US$), before spending money in game.
 
 ```sh
 ./scripts/fetch-data.sh   # pull fresh game data (rtnw.online's SEA client export)
 ./scripts/serve.sh        # http://localhost:8790
-npm test                  # refine maths checks
+npm test                  # refine, damage, fusion, support, money and screenshot-reader checks
 ```
 
 ## Tabs
 
 | Tab | What it answers |
 |---|---|
-| Refine cost | RM to go from +A to +B: typical (P50), bad luck (P90, P99), chance your budget is enough. Counts materials you already own. Shows which +1 steps eat the money. |
-| Damage | Pick your job (icons), your attack skill and level (fills Skill %, flat damage, hits, element and attack type from the game data) and the target monster from the Monster Album (fills race, size and element). Type your character-screen stats or read them from a screenshot (OCR in the browser, nothing uploaded); then change only the slots you care about (Now vs Plan): item (type to search), refine (− / +), card, shadow gear with one-click set fill, gear set bonuses, 5 runes with resonance, Apocalypse traits, card and gear affixes, pets by bond level, skill buffs by job and level, typed buffs. Shows damage per hit and crit, % change, RM for the Plan's refines and RM per +1% damage. Saved only in the browser for 60 minutes. Works on phones. |
-| Support | For Acolyte, Priest, High Priest, Bard, Dancer, Creator, Kanos and the rest: pick the job (icons), type M.ATK / P.ATK / Healing% from the character screen, set skill levels. Shows every heal per hit, per cast and HP/s (Heal, Sanctuary, Coluseo Heal, Ultimates, songs, Potion Pitcher), heal passives (Meditatio, Purgatorial Angel), how much harder a friend hits with your party buffs, and shields on a friend's Max HP. The gear you plan in the Damage tab shows up as Plan with its RM. |
-| Fusion | Main + material card with their affixes, lock, the affix you want: chance per position, every possible result, fusions needed and RM (Spirit Pieces typed from the game). |
+| Refine cost | Real money (your currency) to go from +A to +B: typical (P50), bad luck (P90, P99), chance your budget is enough. Counts materials you already own. Shows which +1 steps eat the money. |
+| Damage | Pick your job (icons), your attack skill and level (fills Skill %, flat damage, hits, element and attack type from the game data) and the target monster from the Monster Album (fills race, size and element). Type your character-screen stats or read them from a screenshot (OCR in the browser, nothing uploaded); then change only the slots you care about (Now vs Plan): item (type to search), refine (− / +), card, shadow gear with one-click set fill, gear set bonuses, 5 runes with resonance, Apocalypse traits, card and gear affixes, pets by bond level, skill buffs by job and level, typed buffs. Shows damage per hit and crit, % change, the cost of the Plan's refines and the cost per +1% damage. Saved only in the browser for 60 minutes. Works on phones. |
+| Support | For Acolyte, Priest, High Priest, Bard, Dancer, Creator, Kanos and the rest: pick the job (icons), type M.ATK / P.ATK / Healing% from the character screen, set skill levels. Shows every heal per hit, per cast and HP/s (Heal, Sanctuary, Coluseo Heal, Ultimates, songs, Potion Pitcher), heal passives (Meditatio, Purgatorial Angel), how much harder a friend hits with your party buffs, and shields on a friend's Max HP. The gear you plan in the Damage tab shows up as Plan with its cost. |
+| Fusion | Main + material card with their affixes, lock, the affix you want: chance per position, every possible result, fusions needed and their cost (Spirit Pieces typed from the game). |
 | Cards | All 195 cards: slot, effect, MVP or not, which monster drops it and at what rate. Search by stat ("CRIT", "ATK%"). |
 | Gear | 3,261 items: base stats, stat per +1 refine, stats at the refine you pick, sort by any stat, filter by job and level. |
-| Shop in RM | Every Starstone price in the shops, turned into ringgit. |
+| Shop | Every Starstone price in the shops, turned into your currency. |
 
 ## How the numbers are made
 
@@ -32,7 +32,7 @@ npm test                  # refine maths checks
   rule is not public, so it is left out: above +12 real costs can be up to ~15% lower.
 - Legendary Ore (blessing): the data says +1 point per use, which may be wrong. Read the rate
   the game shows with the ore on and type it in.
-- RM per Starstone defaults to 0.0655 (12,980 for RM 850, top-up seller, Jul 2026). Change it in the header.
+- Currency: pick where you top up in the header (Malaysia, Thailand, Singapore, Indonesia, Philippines or US$); the first visit guesses from the time zone. Each default price per Starstone is that country's 12,980-Starstone pack from a top-up seller (RM 850, ฿6,831, S$266.29, Rp3,919,894, ₱12,972, US$212; Jul–Nov 2026). Type your own price per Starstone if you top up cheaper.
 - `data/raw` is not committed. `web/data` and `web/img` are, so the site deploys as plain files; `fetch-data.sh` rebuilds all three.
 
 ## Not built yet

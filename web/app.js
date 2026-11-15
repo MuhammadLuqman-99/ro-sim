@@ -1,34 +1,56 @@
 import { expected, simulate, percentile, stepRates } from "./lib/refine.js";
 import { SLOTS, RACES, SIZES, ELEMENTS, sumStats, damage, upgradeStarstones, resonance, runeLevel, withPanel, skillBuffStats, setBonuses, gearAtk } from "./lib/build.js";
 import { parseStats } from "./lib/statscan.js";
+import { CURRENCIES, fmt, formatMoney, guessCurrency, budgetStep, defaultBudget } from "./lib/money.js";
 import { chainOf, defaultLevel, descOf, levelOf, healMods, healSkill, withBuffs, buffGain, gainKeys } from "./lib/support.js";
 import { slotsOf, outcomes, problems, resultLines, targetChance, hasEffect, mainChance, option as fusionOption } from "./lib/fusion.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const fmt = (n, d = 0) => Number(n).toLocaleString("en-MY", { maximumFractionDigits: d, minimumFractionDigits: d });
-const rm = (n) => "RM " + fmt(n, n < 100 ? 2 : 0);
 const QUALITY = { 1: "Common", 2: "Uncommon", 3: "Rare", 4: "Epic", 5: "Legend", 6: "Mythic" };
 const OBTAIN = {
   MonsterConfig: "Monster drop", MvpConfigTable: "MVP", BossRaidTrophyTable: "Boss raid", TradeCommodityTable: "Exchange",
   TaskConfig: "Quest", ItemConfig: "Item / box", HeimDungeonsConfig: "Dungeon", AuctionItemTableConfig: "Auction",
   InfinityTowerTableConfig: "Endless Tower", DaySignInConfig: "Daily sign-in", ForestGameOverAccountTableConfig: "Event",
 };
-const DEFAULT_RM_PER_STAR = 0.0655; // 12,980 Starstones for RM 850 (top-up seller listing, Jul 2026)
 
 let simCache = { key: null };
+// Storage can be blocked (strict privacy settings, some embeds): then nothing is
+// saved, but the page still works.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* not saved */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* nothing to clear */ } },
+};
 // Saved builds live only in this browser and expire 60 minutes after the last change.
 const SAVE_TTL_MS = 60 * 60 * 1000;
 function freshSave(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(key) || "null");
+    const saved = JSON.parse(store.get(key) || "null");
     if (!saved) return null;
-    if (!Number.isFinite(saved.savedAt) || Date.now() - saved.savedAt > SAVE_TTL_MS) { localStorage.removeItem(key); return null; }
+    if (!Number.isFinite(saved.savedAt) || Date.now() - saved.savedAt > SAVE_TTL_MS) { store.del(key); return null; }
     return saved;
-  } catch { localStorage.removeItem(key); return null; }
+  } catch { store.del(key); return null; }
 }
 
-const state = { rmPerStar: Number(localStorage.getItem("rmPerStar")) || DEFAULT_RM_PER_STAR };
+// The currency the player pays in, and their own price per Starstone if they typed one.
+const state = { cur: "MYR", perStar: {} };
+{
+  const saved = store.get("currency");
+  let tz;
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { /* old browser */ }
+  state.cur = CURRENCIES[saved] ? saved : guessCurrency(tz);
+  for (const k of Object.keys(CURRENCIES)) {
+    const v = Number(store.get(`perStar:${k}`));
+    if (v > 0) state.perStar[k] = v;
+  }
+  // the old single "RM per Starstone" box: move a custom price over once, then forget the old key
+  const oldRm = Number(store.get("rmPerStar"));
+  if (oldRm > 0 && !state.perStar.MYR && oldRm !== CURRENCIES.MYR.perStar) { state.perStar.MYR = oldRm; store.set("perStar:MYR", oldRm); }
+  store.del("rmPerStar");
+}
+const rate = () => state.perStar[state.cur] || CURRENCIES[state.cur].perStar;
+const money = (n) => formatMoney(n, state.cur);
 
 async function load(name) {
   const r = await fetch(`data/${name}`);
@@ -55,16 +77,46 @@ async function main() {
     history.replaceState(null, "", `#${t}`);
     if (t === "support") renderSupport(); // it skips work while hidden
   };
-  $("#tabs").addEventListener("click", (e) => e.target.dataset.tab && show(e.target.dataset.tab));
+  $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) show(b.dataset.tab); });
   const start = location.hash.slice(1);
   if (start && document.getElementById(`tab-${start}`)) show(start);
 
-  const rate = $("#rm-per-star");
-  rate.value = state.rmPerStar;
-  rate.addEventListener("change", () => {
-    state.rmPerStar = Number(rate.value) || DEFAULT_RM_PER_STAR;
-    localStorage.setItem("rmPerStar", state.rmPerStar);
-    renderRefine(refine); renderShop(shop); renderGear(gear, refine); renderBuildResults(); renderFusion(); renderSupport();
+  // currency and price per Starstone (header)
+  const curSel = $("#currency"), rateIn = $("#rm-per-star");
+  curSel.innerHTML = Object.entries(CURRENCIES).map(([k, c]) => `<option value="${k}">${esc(c.name)}</option>`).join("");
+  curSel.value = state.cur;
+  const syncRate = () => {
+    rateIn.value = +rate().toPrecision(4);
+    rateIn.title = `Default: ${CURRENCIES[state.cur].src}. Type your own price if you top up cheaper; clear it to go back.`;
+    document.querySelectorAll(".cur-sym").forEach((el) => { el.textContent = CURRENCIES[state.cur].sym; });
+  };
+  const rerender = () => { renderRefine(refine); renderShop(shop); renderGear(gear, refine); renderBuildResults(); renderFusion(); renderSupport(); };
+  // Each currency keeps its own budget: the one typed last, or about RM 200 worth.
+  const budgetIn = $("#refine-form").budget;
+  const loadBudget = () => {
+    budgetIn.step = budgetStep(state.cur);
+    const saved = Number(store.get(`budget:${state.cur}`));
+    budgetIn.value = saved > 0 ? saved : defaultBudget(state.cur);
+  };
+  budgetIn.addEventListener("change", () => {
+    const v = Number(budgetIn.value);
+    if (v > 0) store.set(`budget:${state.cur}`, v); else store.del(`budget:${state.cur}`);
+  });
+  syncRate();
+  loadBudget();
+  curSel.addEventListener("change", () => {
+    state.cur = curSel.value;
+    store.set("currency", state.cur);
+    syncRate();
+    loadBudget();
+    rerender();
+  });
+  rateIn.addEventListener("change", () => {
+    const v = Number(rateIn.value);
+    if (v > 0) { state.perStar[state.cur] = v; store.set(`perStar:${state.cur}`, v); }
+    else { delete state.perStar[state.cur]; store.del(`perStar:${state.cur}`); }
+    syncRate();
+    rerender();
   });
 
   setupRefine(refine);
@@ -119,7 +171,7 @@ function renderRefine(data) {
   const key = JSON.stringify([from, to, runsN, opts]);
   if (simCache.key !== key) simCache = { key, ...simulate(data, from, to, opts, runsN, 20261115) };
   const { mats, runs } = simCache;
-  const R = state.rmPerStar;
+  const R = rate();
   const col = (fn) => runs.map(fn).sort((a, b) => a - b);
   const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
   const stars = col((r) => r.starstones);
@@ -128,10 +180,10 @@ function renderRefine(data) {
 
   const p50 = percentile(stars, 0.5) * R, p90 = percentile(stars, 0.9) * R, p99 = percentile(stars, 0.99) * R;
   $("#refine-kpis").innerHTML = `
-    <div class="kpi good"><div class="label">Typical (half of players pay less)</div><div class="value">${rm(p50)}</div><div class="sub">P50 · ${fmt(percentile(stars, 0.5))} Starstones</div></div>
-    <div class="kpi warn"><div class="label">Bad luck (1 in 10 pay more)</div><div class="value">${rm(p90)}</div><div class="sub">P90 · ${fmt(percentile(stars, 0.9))} Starstones</div></div>
-    <div class="kpi bad"><div class="label">Very bad luck (1 in 100)</div><div class="value">${rm(p99)}</div><div class="sub">P99 · ${fmt(percentile(stars, 0.99))} Starstones</div></div>
-    <div class="kpi ${within >= 0.8 ? "good" : within >= 0.5 ? "warn" : "bad"}"><div class="label">Chance RM ${fmt(budget)} is enough</div><div class="value">${fmt(within * 100, 0)}%</div><div class="sub">+${from} → +${to}, ${fmt(runsN)} simulated players${runsN < asked ? " (cut from " + fmt(asked) + " to stay fast)" : ""}</div></div>`;
+    <div class="kpi good"><div class="label">Typical (half of players pay less)</div><div class="value">${money(p50)}</div><div class="sub">P50 · ${fmt(percentile(stars, 0.5))} Starstones</div></div>
+    <div class="kpi warn"><div class="label">Bad luck (1 in 10 pay more)</div><div class="value">${money(p90)}</div><div class="sub">P90 · ${fmt(percentile(stars, 0.9))} Starstones</div></div>
+    <div class="kpi bad"><div class="label">Very bad luck (1 in 100)</div><div class="value">${money(p99)}</div><div class="sub">P99 · ${fmt(percentile(stars, 0.99))} Starstones</div></div>
+    <div class="kpi ${within >= 0.8 ? "good" : within >= 0.5 ? "warn" : "bad"}"><div class="label">Chance ${money(budget)} is enough</div><div class="value">${fmt(within * 100, 0)}%</div><div class="sub">+${from} → +${to}, ${fmt(runsN)} simulated players${runsN < asked ? " (cut from " + fmt(asked) + " to stay fast)" : ""}</div></div>`;
 
   const rows = [
     ["Attempts", col((r) => r.attempts), (x) => fmt(x)],
@@ -139,7 +191,7 @@ function renderRefine(data) {
     ["Bound Zeny", col((r) => r.zeny), (x) => fmt(x)],
     ...(opts.blessing ? [["Legendary Ore used", col((r) => r.blessItems), (x) => fmt(x)]] : []),
     ["Starstones to buy", stars, (x) => fmt(x)],
-    ["Real money", stars, (x) => rm(x * R)],
+    ["Real money", stars, (x) => money(x * R)],
   ];
   $("#refine-table").innerHTML = `<table class="mid"><thead><tr><th>+${from} → +${to}</th><th class="num">Average</th><th class="num">P50</th><th class="num">P90</th><th class="num">P99</th><th class="num">Worst run</th></tr></thead><tbody>
     ${rows.map(([label, xs, show]) => `<tr${label === "Real money" ? ' class="hot"' : ""}><td>${esc(label)}</td><td class="num">${show(mean(xs))}</td><td class="num">${show(percentile(xs, 0.5))}</td><td class="num">${show(percentile(xs, 0.9))}</td><td class="num">${show(percentile(xs, 0.99))}</td><td class="num">${show(xs[xs.length - 1])}</td></tr>`).join("")}
@@ -163,12 +215,12 @@ function renderRefine(data) {
         <td><div class="bar"><i class="s" style="width:${S}%"></i><i class="d" style="width:${D}%"></i><i class="f" style="width:${F}%"></i></div></td>
         <td class="num">${S}%${S !== lv.success ? ` <span class="src">(${lv.success})</span>` : ""}</td><td class="num">${D ? D + "%" : "—"}</td><td class="num">${F ? F + "%" : "—"}</td>
         <td>${esc(lv.mat)} ×${lv.matAmount}</td><td class="num">${fmt(lv.zeny)}</td>
-        <td class="num">${fmt(e.attempts, 1)}</td><td class="num">${rm(cost)}</td></tr>`;
+        <td class="num">${fmt(e.attempts, 1)}</td><td class="num">${money(cost)}</td></tr>`;
     }).join("")}
   </tbody></table>`;
 
   const ex = expected(data, from, to, opts);
-  $("#refine-note").innerHTML = `Exact average for +${from} → +${to}: ${fmt(ex.attempts, 1)} tries, ${fmt(ex.starstones)} Starstones (${rm(ex.starstones * R)}) if you buy every material.
+  $("#refine-note").innerHTML = `Exact average for +${from} → +${to}: ${fmt(ex.attempts, 1)} tries, ${fmt(ex.starstones)} Starstones (${money(ex.starstones * R)}) if you buy every material.
     Rules used: success +1, "drop" −1 but never below the last safe level (+6/+9/+12/+15), otherwise stay.
     The game also has a pity bonus after fails whose exact rule is not public, so real costs can be up to ~15% lower at +12 and above.
     Blessing bonus is a guess from the data (1 point): check the rate shown in game with the ore on and type it in.
@@ -262,7 +314,7 @@ function renderGear(gear, refine) {
                : list.sort((a, b) => a.n.localeCompare(b.n));
   const cost = expected(refine, 0, N);
   $("#gear-count").innerHTML = `${list.length} items${list.length > 300 ? " (showing first 300, narrow the filters)" : ""}.
-    Getting one item to +${N} from +0 costs about <b>${rm(cost.starstones * state.rmPerStar)}</b> on average if you buy every material (weapon rates; armor uses Elunium at the same Starstone price).`;
+    Getting one item to +${N} from +0 costs about <b>${money(cost.starstones * rate())}</b> on average if you buy every material (weapon rates; armor uses Elunium at the same Starstone price).`;
   const line = ([a, v], mult = 1) => `${esc(gear.attrs[a]?.n ?? a)} +${fmtAttr(gear.attrs[a], v * mult)}`;
   $("#gear-table").innerHTML = `<table><thead><tr><th>Item</th><th>Slot</th><th class="num">Lv</th><th>Base stats</th><th>Per +1 refine</th><th>At +${N} (refine part)</th>${sortA ? `<th class="num">${esc(gear.attrs[sortA].n)} at +${N}</th>` : ""}</tr></thead><tbody>
     ${list.slice(0, 300).map((i) => `<tr>
@@ -288,9 +340,9 @@ function renderShop(shop) {
   const list = shop.filter((i) => (!f.stars.checked || isStar(i)) && (!q || (i.n + " " + i.store + " " + i.tab).toLowerCase().includes(q)))
     .sort((a, b) => (isStar(b) - isStar(a)) || a.store.localeCompare(b.store) || a.price - b.price);
   $("#shop-count").textContent = `${list.length} items${list.length > 400 ? " (showing first 400, search to narrow)" : ""}`;
-  $("#shop-table").innerHTML = `<table class="mid"><thead><tr><th>Item</th><th>Shop / tab</th><th class="num">Qty</th><th>Price</th><th class="num">In RM</th><th class="num">Buy limit</th></tr></thead><tbody>
+  $("#shop-table").innerHTML = `<table class="mid"><thead><tr><th>Item</th><th>Shop / tab</th><th class="num">Qty</th><th>Price</th><th class="num">In ${esc(CURRENCIES[state.cur].sym)}</th><th class="num">Buy limit</th></tr></thead><tbody>
     ${list.slice(0, 400).map((i) => `<tr><td><div class="item-cell">${i.img ? `<img class="shop-icon q${i.q ?? 1}-edge" src="img/${esc(i.img)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span class="shop-icon"></span>`}<span class="name">${esc(i.n)}</span></div></td><td>${esc(i.store)} · ${esc(i.tab)}</td><td class="num">${i.num}</td>
-      <td>${fmt(i.price)} ${esc(i.cur)}</td><td class="num">${isStar(i) ? rm(i.price * state.rmPerStar) : "—"}</td>
+      <td>${fmt(i.price)} ${esc(i.cur)}</td><td class="num">${isStar(i) ? money(i.price * rate()) : "—"}</td>
       <td class="num">${i.limit ? fmt(i.limit) : "—"}</td></tr>`).join("")}
   </tbody></table>`;
 }
@@ -473,7 +525,7 @@ function saveBuild() {
   const f = $("#build-form");
   const form = {};
   for (const el of f.elements) if (el.name) form[el.name] = el.value;
-  localStorage.setItem(BUILD_KEY, JSON.stringify({ savedAt: Date.now(), form, now: B.now, plan: B.plan, gearView: B.gearView,
+  store.set(BUILD_KEY, JSON.stringify({ savedAt: Date.now(), form, now: B.now, plan: B.plan, gearView: B.gearView,
     mode: B.mode, panel: B.panel, base: B.base, buffs: B.buffs, skillBuffs: B.skillBuffs }));
 }
 
@@ -610,7 +662,7 @@ function renderBuildResults() {
   const dp = damage(plan.t, ctxRun);
   const change = dn.hit > 0 ? dp.hit / dn.hit - 1 : 0;
   const stars = upgradeStarstones(B.now, B.plan, B.refine);
-  const cost = stars * state.rmPerStar;
+  const cost = stars * rate();
   // From the character screen with nothing changed yet, Plan is simply Now.
   const sameAsNow = B.mode === "panel" && sideEmpty("plan") && sideEmpty("now");
   const planEmpty = sideEmpty("plan") && !sameAsNow;
@@ -619,7 +671,7 @@ function renderBuildResults() {
     <div class="kpi"><div class="label">Now · damage per hit</div><div class="value">${fmt(dn.hit)}</div><div class="sub">${ctx.hits > 1 ? `× ${ctx.hits} hits = ${fmt(dn.hit * ctx.hits)} · ` : ""}${crit(dn)} · ${ctx.type.startsWith("magic") ? "M.ATK" : "ATK"} ${fmt(dn.atk)}</div></div>
     <div class="kpi"><div class="label">Plan · damage per hit</div><div class="value">${planEmpty ? "—" : fmt(dp.hit)}</div><div class="sub">${planEmpty ? "fill the Plan column, or Copy Now → Plan" : `${ctx.hits > 1 ? `× ${ctx.hits} hits = ${fmt(dp.hit * ctx.hits)} · ` : ""}${crit(dp)} · ${ctx.type.startsWith("magic") ? "M.ATK" : "ATK"} ${fmt(dp.atk)}`}</div></div>
     <div class="kpi ${change > 0.0005 ? "good" : change < -0.0005 ? "bad" : ""}"><div class="label">Plan vs Now</div><div class="value">${planEmpty ? "—" : `${change >= 0 ? "+" : ""}${fmt(change * 100, 1)}%`}</div><div class="sub">${sameAsNow ? "change a slot, rune or extra to compare" : `vs ${esc(ctx.race)} · ${esc(ctx.size)} · ${esc(ctx.targetElement)}`}</div></div>
-    <div class="kpi ${cost > 0 ? "warn" : ""}"><div class="label">Refines in Plan cost about</div><div class="value">${rm(cost)}</div><div class="sub">${cost > 0 && change > 0.0005 ? `${rm(cost / (change * 100))} per +1% damage · ` : ""}average, all materials bought</div></div>`;
+    <div class="kpi ${cost > 0 ? "warn" : ""}"><div class="label">Refines in Plan cost about</div><div class="value">${money(cost)}</div><div class="sub">${cost > 0 && change > 0.0005 ? `${money(cost / (change * 100))} per +1% damage · ` : ""}average, all materials bought</div></div>`;
 
 
   renderSets();
@@ -937,7 +989,7 @@ function renderFusion() {
 
   const errs = problems(main, mat, lock);
   $("#fusion-problems").innerHTML = errs.length ? `<div class="fz-warn">${errs.map(esc).join("<br>")}</div>` : "";
-  localStorage.setItem(FUSION_KEY, JSON.stringify({ savedAt: Date.now(), slot, pieces: f.pieces.value, main: FZ.main, mat: FZ.mat, lock: FZ.lock, target: FZ.target }));
+  store.set(FUSION_KEY, JSON.stringify({ savedAt: Date.now(), slot, pieces: f.pieces.value, main: FZ.main, mat: FZ.mat, lock: FZ.lock, target: FZ.target }));
   if (errs.length) {
     $("#fusion-kpis").innerHTML = $("#fusion-positions").innerHTML = $("#fusion-outcomes").innerHTML = "";
     return;
@@ -946,12 +998,12 @@ function renderFusion() {
   const outs = outcomes(d, mainSlots, matSlots, lock);
   const p = FZ.target ? targetChance(d, outs, FZ.target) : 0;
   const pieces = Number(f.pieces.value);
-  const perTry = pieces > 0 ? pieces * 2 * state.rmPerStar : null;
+  const perTry = pieces > 0 ? pieces * 2 * rate() : null;
   $("#fusion-kpis").innerHTML = `
     <div class="kpi ${p >= 0.5 ? "good" : p >= 0.2 ? "warn" : "bad"}"><div class="label">Chance per fusion</div><div class="value">${fmt(p * 100, 1)}%</div><div class="sub">${esc(display1(fusionOption(d, FZ.target)))}</div></div>
     <div class="kpi"><div class="label">Fusions needed on average</div><div class="value">${p > 0 ? fmt(1 / p, 1) : "—"}</div><div class="sub">with the same kind of material each time</div></div>
-    <div class="kpi"><div class="label">Cost per fusion</div><div class="value">${perTry == null ? "—" : rm(perTry)}</div><div class="sub">${perTry == null ? "type the Spirit Pieces from the game" : `${fmt(pieces)} Spirit Pieces × 2 Starstones`}</div></div>
-    <div class="kpi warn"><div class="label">Average cost to get it</div><div class="value">${perTry == null || !(p > 0) ? "—" : rm(perTry / p)}</div><div class="sub">Spirit Pieces only, not the material cards</div></div>`;
+    <div class="kpi"><div class="label">Cost per fusion</div><div class="value">${perTry == null ? "—" : money(perTry)}</div><div class="sub">${perTry == null ? "type the Spirit Pieces from the game" : `${fmt(pieces)} Spirit Pieces × 2 Starstones`}</div></div>
+    <div class="kpi warn"><div class="label">Average cost to get it</div><div class="value">${perTry == null || !(p > 0) ? "—" : money(perTry / p)}</div><div class="sub">Spirit Pieces only, not the material cards</div></div>`;
 
   $("#fusion-positions").innerHTML = `<table class="mid"><thead><tr><th>Position</th><th>Main card</th><th>Material</th><th class="num">Main wins</th><th class="num">Material wins</th></tr></thead><tbody>
     ${Array.from({ length: n }, (_, i) => {
@@ -1653,7 +1705,7 @@ function setupSupport(data) {
 }
 
 function saveSupport() {
-  localStorage.setItem(SUPPORT_KEY, JSON.stringify({ savedAt: Date.now(), job: SUP.job, me: SUP.me, friend: SUP.friend,
+  store.set(SUPPORT_KEY, JSON.stringify({ savedAt: Date.now(), job: SUP.job, me: SUP.me, friend: SUP.friend,
     levels: SUP.levels, off: SUP.off, mods: SUP.mods, selfBuff: SUP.selfBuff }));
 }
 
@@ -1801,14 +1853,14 @@ function renderSupport() {
     : `<p class="note">No shields or protections in this job line.</p>`;
 
   // ---- KPIs
-  const stars = upgradeStarstones(B.now, B.plan, B.refine), cost = planEmpty ? 0 : stars * state.rmPerStar;
+  const stars = upgradeStarstones(B.now, B.plan, B.refine), cost = planEmpty ? 0 : stars * rate();
   const ch = best && best.now.hit > 0 ? best.plan.hit / best.now.hit - 1 : 0;
   const kyrie = protect.find((s) => levelOf(s, supLv(s)).shield != null);
   const kStat = (me) => (best?.now.stat === "maxhp" ? `friend Max HP ${fmt(target.maxhp)}` : `${statName[best?.now.stat] || "M.ATK"} ${fmt(me[best?.now.stat] ?? me.matk)}`);
   $("#sup-kpis").innerHTML = `
     <div class="kpi"><div class="label">Now · ${best ? `${esc(best.s.name)} per cast` : "biggest heal"}</div><div class="value">${best && best.now.cast ? fmt(best.now.cast) : "—"}</div><div class="sub">${best ? `Lv${supLv(best.s)} · ${kStat(meNow)} · Healing ${fmt((meNow.heal || 0) * 100, 1)}%` : "no heals in this job line"}</div></div>
     <div class="kpi"><div class="label">Plan · same heal</div><div class="value">${best && best.plan.cast && !planEmpty ? fmt(best.plan.cast) : "—"}</div><div class="sub">${planEmpty ? "plan gear in the Damage tab" : `${kStat(mePlan)} · Healing ${fmt((mePlan.heal || 0) * 100, 1)}%`}</div></div>
-    <div class="kpi ${ch > 0.0005 ? "good" : ch < -0.0005 ? "bad" : ""}"><div class="label">Plan vs Now (heals)</div><div class="value">${planEmpty || !best ? "—" : `${ch >= 0 ? "+" : ""}${fmt(ch * 100, 1)}%`}</div><div class="sub">${cost > 0 ? `refines in Plan cost about ${rm(cost)}${ch > 0.0005 ? ` · ${rm(cost / (ch * 100))} per +1%` : ""}` : "same skill level, gear changes only"}</div></div>
+    <div class="kpi ${ch > 0.0005 ? "good" : ch < -0.0005 ? "bad" : ""}"><div class="label">Plan vs Now (heals)</div><div class="value">${planEmpty || !best ? "—" : `${ch >= 0 ? "+" : ""}${fmt(ch * 100, 1)}%`}</div><div class="sub">${cost > 0 ? `refines in Plan cost about ${money(cost)}${ch > 0.0005 ? ` · ${money(cost / (ch * 100))} per +1%` : ""}` : "same skill level, gear changes only"}</div></div>
     <div class="kpi ${total ? "good" : ""}"><div class="label">Your buffs: friend hits harder</div><div class="value">${total == null ? "—" : `+${fmt(total * 100, 1)}%`}</div><div class="sub">${total == null ? "type your friend's ATK" : `${onBuffs.length} buff${onBuffs.length === 1 ? "" : "s"} ticked`}${kyrie && target.maxhp ? ` · ${esc(kyrie.name)} ${fmt(target.maxhp * levelOf(kyrie, supLv(kyrie)).shield / 100)} HP` : ""}</div></div>`;
 
   $("#sup-notes").innerHTML = `How heals are worked out: (skill % × M.ATK, or P.ATK for songs and potions, + the flat part) × (1 + your Healing% + heal passives) × (1 + your friend's Received Healing%).

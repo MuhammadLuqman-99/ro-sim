@@ -10,8 +10,9 @@ header { position: sticky; top: 0; z-index: 5; display: flex; gap: 20px; align-i
 .brand span { background: #fff; color: var(--blue); border-radius: 4px; padding: 0 5px; font-size: 12px; }
 nav button { background: transparent; color: #dbe5ff; border: 0; padding: 6px 12px; font-size: 14px; border-radius: 6px; cursor: pointer; }
 nav button.on { background: #fff; color: var(--blue); font-weight: 600; }
-.rate { margin-left: auto; font-size: 12px; }
+.rate { margin-left: auto; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .rate input { width: 80px; margin-left: 6px; }
+.rate select { font-size: 12px; padding: 3px 6px; }
 main { padding: 16px 20px 40px; max-width: 1400px; margin: 0 auto; }
 .tab { display: none; }
 .tab.on { display: block; }
