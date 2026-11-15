@@ -63,3 +63,11 @@ footer a { color: var(--blue); }
 .q1-edge { border-color: var(--q1) !important; } .q2-edge { border-color: var(--q2) !important; } .q3-edge { border-color: var(--q3) !important; }
 .q4-edge { border-color: var(--q4) !important; } .q5-edge { border-color: var(--q5) !important; } .q6-edge { border-color: var(--q6) !important; }
 .card-tile.q1-edge, .card-tile.q2-edge, .card-tile.q3-edge, .card-tile.q4-edge, .card-tile.q5-edge, .card-tile.q6-edge { border-top-color: var(--line) !important; border-right-color: var(--line) !important; border-bottom-color: var(--line) !important; }
+
+/* creator banner */
+.creator { display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap; padding: 6px 16px; font-size: 13px; color: #e0e7ff; background: linear-gradient(90deg, #0b1f5c, #1d4ed8 50%, #0b1f5c); }
+.creator b { color: #fff; letter-spacing: .3px; }
+.creator .ign { font-size: 10px; font-weight: 700; background: #fbbf24; color: #0b1f5c; border-radius: 4px; padding: 0 4px; margin-left: 2px; }
+.creator a { display: inline-flex; align-items: center; gap: 5px; color: #fff; text-decoration: none; background: rgba(255,255,255,.12); border-radius: 12px; padding: 2px 10px; }
+.creator a:hover { background: rgba(255,255,255,.24); }
+header { border-top: 1px solid rgba(255,255,255,.15); }
