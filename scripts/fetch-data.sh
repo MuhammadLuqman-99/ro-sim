@@ -24,7 +24,9 @@ get "/sea/card-simulator/data/card_fusion_simulator_$LOC.json"   "$RAW/card_fusi
 get "/sea/shop/data/shop_index_$LOC.json"                        "$RAW/shop.json"
 get "/sea/equipment/data/equipment_index_$LOC.json"              "$RAW/equipment_index.json"
 
-# Equipment stats live in chunk files named by the index.
+# Equipment stats live in chunk files named by the index. Start clean so a
+# chunk rtnw dropped or renamed can't leave old stats behind.
+rm -f "$RAW"/equipment/*.json
 chunks=$(python3 -I -c 'import json,sys; print("\n".join(sorted({i["_detailChunk"] for i in json.load(open(sys.argv[1]))["items"]})))' "$RAW/equipment_index.json")
 for c in $chunks; do
   get "/sea/equipment/data/optimized/$LOC/$c" "$RAW/equipment/$c"

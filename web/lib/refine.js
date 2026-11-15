@@ -41,7 +41,8 @@ export function expected(data, from, to, opts = {}) {
   const lo = safeFloor(data.safeLevels, from);
   const n = to - lo;
   if (n <= 0 || from >= to) return { attempts: 0, starstones: 0, zeny: 0 };
-  const byLevel = new Map(data.levels.map((l) => [l.level, l]));
+  const table = levelTable(data);
+  const byLevel = { get: (s) => table[s] };
   const solve = (costOf) => {
     const A = Array.from({ length: n }, () => new Array(n + 1).fill(0));
     for (let s = lo; s < to; s++) {
@@ -92,9 +93,17 @@ export function mulberry32(seed) {
 // Monte Carlo. Returns one record per run so the page can take percentiles
 // after subtracting what the player already owns.
 //   opts.owned: { "Oridecon": 120, ... }   materials already in the bag
+// Levels indexed by their own level number, whatever order the export uses.
+export function levelTable(data) {
+  const t = [];
+  for (const l of data.levels) t[l.level] = l;
+  for (let i = 0; i < data.maxLevel; i++) if (!t[i]) throw new Error(`refine data has no +${i} row`);
+  return t;
+}
+
 export function simulate(data, from, to, opts = {}, runs = 10000, seed = 1) {
   const rand = mulberry32(seed);
-  const byLevel = data.levels.map((l) => l); // index == level
+  const byLevel = levelTable(data);
   const rates = byLevel.map((lv) => stepRates(lv, opts));
   const bless = byLevel.map((lv) => usesBlessing(lv, opts));
   const mats = [...new Set(byLevel.map((l) => l.mat))];

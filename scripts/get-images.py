@@ -11,8 +11,21 @@ from concurrent.futures import ThreadPoolExecutor
 BASE = "https://rtnw.online/media/images/"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
 listing, out = sys.argv[1], sys.argv[2]
+ROOT = os.path.realpath(out)
+
+
+def safe(p):
+    """Only plain relative paths that stay inside web/img."""
+    if not p or p.startswith(("/", "\\")) or ".." in p.replace("\\", "/").split("/"):
+        return False
+    return os.path.realpath(os.path.join(out, p)).startswith(ROOT + os.sep)
+
+
 with open(listing, encoding="utf-8") as f:
-    paths = [p.strip() for p in f if p.strip()]
+    listed = [p.strip() for p in f if p.strip()]
+paths = [p for p in listed if safe(p)]
+for p in sorted(set(listed) - set(paths)):
+    print("  skipped unsafe path:", p)
 todo = [p for p in paths
         if not os.path.exists(os.path.join(out, p)) or os.path.getsize(os.path.join(out, p)) == 0]
 

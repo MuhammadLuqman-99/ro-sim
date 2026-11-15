@@ -39,11 +39,26 @@ test("Monte Carlo mean agrees with the exact expectation", { skip }, () => {
   }
 });
 
-test("a run never drops below the safe level it started on", { skip }, () => {
-  // From +9 the item can fall to +9 at worst, so each run needs >= 3 attempts and
-  // the sim must finish; a broken floor would make +9->+12 blow up.
-  const { runs } = simulate(data, 9, 12, {}, 2000, 3);
-  assert.ok(runs.every((r) => r.attempts >= 3));
+test("a drop never goes below the last safe level", () => {
+  // Synthetic table: +2 is safe, and every step drops 90% of the time.
+  // Each extra attempt costs 1 Starstone of material, so a run that fell to +0/+1
+  // would need the 100%-success climb back and show up as a level-0/1 material use.
+  const lv = (level) => ({ level, success: 10, downgrade: 90, fail: 0, mat: `m${level}`, matAmount: 1, matStarstone: 1, zeny: 0, blessing: {} });
+  const synth = { maxLevel: 4, safeLevels: [2], levels: [0, 1, 2, 3].map(lv) };
+  synth.levels[0].success = 100; synth.levels[0].downgrade = 0;
+  synth.levels[1].success = 100; synth.levels[1].downgrade = 0;
+  const { mats, runs } = simulate(synth, 2, 4, {}, 2000, 3);
+  for (const m of ["m0", "m1"]) {
+    const i = mats.indexOf(m);
+    assert.ok(runs.every((r) => r.used[i] === 0), `a run fell below +2 (used ${m})`);
+  }
+  // and the exact solver agrees the floor holds: from +3, a drop lands on +2, not +1
+  assert.ok(Number.isFinite(expected(synth, 2, 4).attempts));
+});
+
+test("refine data must have every level", () => {
+  const broken = { maxLevel: 3, safeLevels: [], levels: [{ level: 0 }, { level: 2 }] };
+  assert.throws(() => simulate(broken, 0, 3, {}, 1), /no \+1 row/);
 });
 
 test("owned materials cut the Starstone bill and never make it negative", { skip }, () => {

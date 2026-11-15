@@ -1,4 +1,4 @@
-import { expected, simulate, percentile } from "./lib/refine.js";
+import { expected, simulate, percentile, stepRates } from "./lib/refine.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -12,6 +12,7 @@ const OBTAIN = {
 };
 const DEFAULT_RM_PER_STAR = 0.0655; // 12,980 Starstones for RM 850 (top-up seller listing, Jul 2026)
 
+let simCache = { key: null };
 const state = { rmPerStar: Number(localStorage.getItem("rmPerStar")) || DEFAULT_RM_PER_STAR };
 
 async function load(name) {
@@ -38,7 +39,8 @@ async function main() {
     history.replaceState(null, "", `#${t}`);
   };
   $("#tabs").addEventListener("click", (e) => e.target.dataset.tab && show(e.target.dataset.tab));
-  if (location.hash) show(location.hash.slice(1));
+  const start = location.hash.slice(1);
+  if (start && document.getElementById(`tab-${start}`)) show(start);
 
   const rate = $("#rm-per-star");
   rate.value = state.rmPerStar;
@@ -72,7 +74,8 @@ function refineOpts(f) {
     owned,
     blessing: f.blessing.checked,
     blessingFrom: Number(f.blessingFrom.value) || 0,
-    blessingBonus: Number(f.blessingBonus.value) || 0,
+    // empty field -> use the bonus from the data
+    blessingBonus: f.blessingBonus.value === "" ? undefined : Number(f.blessingBonus.value),
   };
 }
 
@@ -86,8 +89,14 @@ function renderRefine(data) {
     return;
   }
   const opts = refineOpts(f);
-  const runsN = Number(f.runs.value);
-  const { mats, runs } = simulate(data, from, to, opts, runsN, 20261115);
+  // Keep one render under ~40M simulated attempts so the tab never freezes.
+  const avgTries = expected(data, from, to, opts).attempts;
+  const asked = Number(f.runs.value);
+  const runsN = Math.max(500, Math.min(asked, Math.floor(4e7 / Math.max(1, avgTries))));
+  // Budget and RM rate don't change the dice: reuse the last runs when only they change.
+  const key = JSON.stringify([from, to, runsN, opts]);
+  if (simCache.key !== key) simCache = { key, ...simulate(data, from, to, opts, runsN, 20261115) };
+  const { mats, runs } = simCache;
   const R = state.rmPerStar;
   const col = (fn) => runs.map(fn).sort((a, b) => a - b);
   const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
@@ -100,7 +109,7 @@ function renderRefine(data) {
     <div class="kpi good"><div class="label">Typical (half of players pay less)</div><div class="value">${rm(p50)}</div><div class="sub">P50 · ${fmt(percentile(stars, 0.5))} Starstones</div></div>
     <div class="kpi warn"><div class="label">Bad luck (1 in 10 pay more)</div><div class="value">${rm(p90)}</div><div class="sub">P90 · ${fmt(percentile(stars, 0.9))} Starstones</div></div>
     <div class="kpi bad"><div class="label">Very bad luck (1 in 100)</div><div class="value">${rm(p99)}</div><div class="sub">P99 · ${fmt(percentile(stars, 0.99))} Starstones</div></div>
-    <div class="kpi ${within >= 0.8 ? "good" : within >= 0.5 ? "warn" : "bad"}"><div class="label">Chance RM ${fmt(budget)} is enough</div><div class="value">${fmt(within * 100, 0)}%</div><div class="sub">+${from} → +${to}, ${fmt(runsN)} simulated players</div></div>`;
+    <div class="kpi ${within >= 0.8 ? "good" : within >= 0.5 ? "warn" : "bad"}"><div class="label">Chance RM ${fmt(budget)} is enough</div><div class="value">${fmt(within * 100, 0)}%</div><div class="sub">+${from} → +${to}, ${fmt(runsN)} simulated players${runsN < asked ? " (cut from " + fmt(asked) + " to stay fast)" : ""}</div></div>`;
 
   const rows = [
     ["Attempts", col((r) => r.attempts), (x) => fmt(x)],
@@ -122,13 +131,15 @@ function renderRefine(data) {
   const maxRm = Math.max(0, ...steps.filter((s) => s.lv.level >= from && s.lv.level < to).map((s) => s.e.starstones * R));
   $("#refine-steps").innerHTML = `<table><thead><tr><th>Step</th><th>Rates</th><th class="num">Success</th><th class="num">Drop −1</th><th class="num">Stay</th><th>Material / try</th><th class="num">Zeny / try</th><th class="num">Avg tries</th><th class="num">Avg cost</th></tr></thead><tbody>
     ${steps.map(({ lv, e }) => {
+      const r = stepRates(lv, opts);
+      const S = +(r.p * 100).toFixed(1), D = +(r.d * 100).toFixed(1), F = +(100 - S - D).toFixed(1);
       const inRange = lv.level >= from && lv.level < to;
       const cost = e.starstones * R;
       const safe = data.safeLevels.includes(lv.level + 1) ? ' <span class="tag">safe</span>' : "";
       return `<tr class="${inRange && cost >= maxRm * 0.25 ? "hot" : ""}" style="${inRange ? "" : "opacity:.45"}">
         <td>+${lv.level} → +${lv.level + 1}${safe}</td>
-        <td><div class="bar"><i class="s" style="width:${lv.success}%"></i><i class="d" style="width:${lv.downgrade}%"></i><i class="f" style="width:${lv.fail}%"></i></div></td>
-        <td class="num">${lv.success}%</td><td class="num">${lv.downgrade ? lv.downgrade + "%" : "—"}</td><td class="num">${lv.fail ? lv.fail + "%" : "—"}</td>
+        <td><div class="bar"><i class="s" style="width:${S}%"></i><i class="d" style="width:${D}%"></i><i class="f" style="width:${F}%"></i></div></td>
+        <td class="num">${S}%${S !== lv.success ? ` <span class="src">(${lv.success})</span>` : ""}</td><td class="num">${D ? D + "%" : "—"}</td><td class="num">${F ? F + "%" : "—"}</td>
         <td>${esc(lv.mat)} ×${lv.matAmount}</td><td class="num">${fmt(lv.zeny)}</td>
         <td class="num">${fmt(e.attempts, 1)}</td><td class="num">${rm(cost)}</td></tr>`;
     }).join("")}
@@ -254,6 +265,7 @@ function renderShop(shop) {
   const isStar = (i) => i.curId === 201 || i.curId === 2201;
   const list = shop.filter((i) => (!f.stars.checked || isStar(i)) && (!q || (i.n + " " + i.store + " " + i.tab).toLowerCase().includes(q)))
     .sort((a, b) => (isStar(b) - isStar(a)) || a.store.localeCompare(b.store) || a.price - b.price);
+  $("#shop-count").textContent = `${list.length} items${list.length > 400 ? " (showing first 400, search to narrow)" : ""}`;
   $("#shop-table").innerHTML = `<table><thead><tr><th>Item</th><th>Shop / tab</th><th class="num">Qty</th><th>Price</th><th class="num">In RM</th><th class="num">Buy limit</th></tr></thead><tbody>
     ${list.slice(0, 400).map((i) => `<tr><td class="name">${esc(i.n)}</td><td>${esc(i.store)} · ${esc(i.tab)}</td><td class="num">${i.num}</td>
       <td>${fmt(i.price)} ${esc(i.cur)}</td><td class="num">${isStar(i) ? rm(i.price * state.rmPerStar) : "—"}</td>

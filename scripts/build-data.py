@@ -35,14 +35,17 @@ def img(name):
     if not path:
         return None
     path = path.replace("\\", "/")
+    if path.startswith("/") or ".." in path.split("/"):
+        return None
     wanted.add(path)
     return path
 
 
 # ---- refine ---------------------------------------------------------------
 r = load("refine.json")
+assert sorted(l["level"] for l in r["levels"]) == list(range(r["maxLevel"])), "refine levels missing or doubled"
 levels = []
-for l in r["levels"]:
+for l in sorted(r["levels"], key=lambda l: l["level"]):
     sup = l.get("support") or {}
     bless = sup.get("blessing") or {}
     levels.append({
