@@ -33,6 +33,33 @@ for c in $chunks; do
 done
 
 get "/sea/skill-simulator/data/icon_paths.json"                 "$RAW/icon_paths.json"
+get "/sea/apocalypse-simulator/data/apocalypse_planner_$LOC.json" "$RAW/apocalypse.json"
+get "/sea/skill-simulator/data/engine_runes_$LOC.json"          "$RAW/runes.json"
+
+# Monsters (to pick a target's race, size and element) and pets (bond stats).
+mkdir -p "$RAW/monsters"
+get "/sea/monster-album/data/monster_index_$LOC.json"           "$RAW/monsters/index.json"
+get "/sea/pet/data/pet_library_$LOC.json"                       "$RAW/pets.json"
+
+# Skills per job (buffs for the Damage tab, heals and party skills for the
+# Support tab): an index, then one file per job that has skills in SEA.
+mkdir -p "$RAW/skills"
+rm -f "$RAW"/skills/*.json
+get "/sea/skill-simulator/data/skills_index_$LOC.json"          "$RAW/skills/index.json"
+jobs=$(python3 -I -c 'import json,sys; print("\n".join(k for k, v in json.load(open(sys.argv[1]))["jobs"].items() if v.get("has_skills")))' "$RAW/skills/index.json")
+for id in $jobs; do
+  case "$id" in *[!0-9]*|"") echo "  skipped odd job id: $id" ;; *) get "/sea/skill-simulator/data/jobs_$LOC/$id.json" "$RAW/skills/$id.json" ;; esac
+done
+
+# Equipment affixes: an index, a manifest and ~20 shard files.
+mkdir -p "$RAW/affix"
+rm -f "$RAW"/affix/shard-*.json
+get "/sea/affix-simulator/data/stunt_package_index_$LOC.json"   "$RAW/affix/index.json"
+get "/sea/affix-simulator/data/stunt_shard_manifest_$LOC.json"  "$RAW/affix/manifest.json"
+shards=$(python3 -I -c 'import json,sys; print("\n".join(sorted(set(json.load(open(sys.argv[1]))["packageToShard"].values()))))' "$RAW/affix/manifest.json")
+for sh in $shards; do
+  case "$sh" in shard-[0-9]*.json) get "/sea/affix-simulator/data/optimized/$LOC/$sh" "$RAW/affix/$sh" ;; *) echo "  skipped odd shard name: $sh" ;; esac
+done
 
 python3 -I scripts/build-data.py "$RAW" web/data
 

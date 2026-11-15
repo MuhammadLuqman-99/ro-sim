@@ -18,6 +18,9 @@ npm test                  # refine maths checks
 | Tab | What it answers |
 |---|---|
 | Refine cost | RM to go from +A to +B: typical (P50), bad luck (P90, P99), chance your budget is enough. Counts materials you already own. Shows which +1 steps eat the money. |
+| Damage | Pick your job (icons), your attack skill and level (fills Skill %, flat damage, hits, element and attack type from the game data) and the target monster from the Monster Album (fills race, size and element). Type your character-screen stats or read them from a screenshot (OCR in the browser, nothing uploaded); then change only the slots you care about (Now vs Plan): item (type to search), refine (− / +), card, shadow gear with one-click set fill, gear set bonuses, 5 runes with resonance, Apocalypse traits, card and gear affixes, pets by bond level, skill buffs by job and level, typed buffs. Shows damage per hit and crit, % change, RM for the Plan's refines and RM per +1% damage. Saved only in the browser for 60 minutes. Works on phones. |
+| Support | For Acolyte, Priest, High Priest, Bard, Dancer, Creator, Kanos and the rest: pick the job (icons), type M.ATK / P.ATK / Healing% from the character screen, set skill levels. Shows every heal per hit, per cast and HP/s (Heal, Sanctuary, Coluseo Heal, Ultimates, songs, Potion Pitcher), heal passives (Meditatio, Purgatorial Angel), how much harder a friend hits with your party buffs, and shields on a friend's Max HP. The gear you plan in the Damage tab shows up as Plan with its RM. |
+| Fusion | Main + material card with their affixes, lock, the affix you want: chance per position, every possible result, fusions needed and RM (Spirit Pieces typed from the game). |
 | Cards | All 195 cards: slot, effect, MVP or not, which monster drops it and at what rate. Search by stat ("CRIT", "ATK%"). |
 | Gear | 3,261 items: base stats, stat per +1 refine, stats at the refine you pick, sort by any stat, filter by job and level. |
 | Shop in RM | Every Starstone price in the shops, turned into ringgit. |
@@ -35,11 +38,14 @@ npm test                  # refine maths checks
 ## Not built yet
 
 - Card fusion odds (how the 3 affix weights work is unknown even to rtnw.online).
-- A full character sheet (stat formulas and damage are not in the export).
+- Exact damage: the game's formula is not public. The Damage tab uses the usual Ragnarok mobile shape (each bonus type multiplies), ignores target DEF and does not turn STR/INT/etc. into ATK. Trust the % change between two builds more than the raw number.
+- Heals: the skill numbers come from the game text, but how Healing% stacks is not public; the Support tab adds Healing% bonuses together and multiplies the rest.
+- Card Fusion odds follow rtnw.online's model (weights by affix tier); the game's real rule and the Spirit Pieces per fusion are not in the data.
+- Rune main effects that only work in some fights start switched off; tick "count" when they apply. Gear affixes that only work under a condition are listed, not counted.
 - Kafra box / gacha odds (not in the export).
 
 ## Deploy
 
-Live at https://muhammadluqman-99.github.io/ro-sim/ (GitHub Pages, free).
+Live at https://muhammadluqman-99.github.io/ro-sim/ (GitHub Pages, free). It can also run on Vercel: import the repo at vercel.com/new and `vercel.json` does the rest (tests run as the build step, `web/` is served, images and the OCR files are cached).
 Every push to `main` runs the tests and publishes `web/` (`.github/workflows/pages.yml`).
 After a game patch: `./scripts/fetch-data.sh`, check locally, commit `web/data` + `web/img`, push.

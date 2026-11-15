@@ -3,8 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RO New World SEA · spend sim</title>
+  <title>RO New World SEA · Spend Simulator</title>
+  <meta name="description" content="Fan-made spend simulator for Ragnarok: The New World (SEA). See refine cost in ringgit, damage from cards and gear, heals and party buffs, card fusion odds and shop prices before you top up.">
+  <meta name="theme-color" content="#1d4ed8">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RO New World SEA · Spend Simulator">
+  <meta property="og:description" content="Refine cost in RM, damage, support heals, card fusion odds and shop prices. Fan-made by IkanAI.">
+  <meta property="og:image" content="https://muhammadluqman-99.github.io/ro-sim/og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/webp" href="img/monster/icon_monster_head_boli_01.webp">
 </head>
 <body>
   <section class="hero" aria-label="Ragnarok: The New World SEA spend simulator, created by IkanAI">
@@ -13,8 +23,8 @@
         <div class="hero-kicker">Ragnarok: The New World · SEA</div>
         <h1>Spend <span>Simulator</span></h1>
         <p>See what cards, gear and refines really cost in ringgit, before you top up.</p>
-        <div class="hero-by">Created by <b>IkanAI</b> <span class="ign">IGN</span></div>
         <div class="hero-links">
+          <span class="hero-by">Created by <b>IkanAI</b> <span class="ign">IGN</span></span>
           <a class="btn btn-gh" href="https://github.com/MuhammadLuqman-99" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> MuhammadLuqman-99</a>
           <a class="btn btn-ghost" href="https://github.com/MuhammadLuqman-99/ro-sim" target="_blank" rel="noopener">★ Star this project</a>
         </div>
@@ -34,9 +44,12 @@
     </div>
   </section>
   <header>
-    <div class="brand">RO New World <span>SEA</span> · spend sim</div>
+    <div class="brand">RO New World <span>SEA</span><em class="brand-sub"> · spend sim</em></div>
     <nav id="tabs">
       <button data-tab="refine" class="on">Refine cost</button>
+      <button data-tab="build">Damage</button>
+      <button data-tab="support">Support</button>
+      <button data-tab="fusion">Fusion</button>
       <button data-tab="cards">Cards</button>
       <button data-tab="gear">Gear</button>
       <button data-tab="shop">Shop in RM</button>
@@ -73,6 +86,160 @@
       <p class="note">Starting from that level, all bought with Starstones. Where it drops (downgrade) is included.</p>
       <div id="refine-steps"></div>
       <p class="note" id="refine-note"></p>
+    </section>
+
+    <!-- BUILD & DAMAGE -->
+    <section id="tab-build" class="tab">
+      <ol class="steps">
+        <li><span><b>Set up</b> your job and the monster you hit</span></li>
+        <li><span><b>Type</b> your character screen stats (and any buffs)</span></li>
+        <li><span><b>Change</b> a slot: Now = what you wear there, Plan = what you'd put in</span></li>
+        <li><span><b>Read</b> the % change and what it costs in RM</span></li>
+      </ol>
+      <form id="build-form" class="controls">
+        <label>Job <input type="hidden" name="job" value="">
+          <button type="button" id="job-btn" class="job-btn" aria-haspopup="true"></button></label>
+        <label>Attack <select name="type">
+          <option value="melee">Physical melee</option><option value="ranged">Physical ranged</option>
+          <option value="magic">Magic</option><option value="magic-ranged">Magic ranged</option></select></label>
+        <label>Skill <select name="atkSkill" class="atk-skill"></select></label>
+        <label>Lv <select name="atkLv"></select></label>
+        <label>Skill % <input name="skill" type="number" min="0" step="10" value="100"></label>
+        <label>+ flat <input name="skillFlat" type="number" min="0" step="10" value="0"></label>
+        <label>Hits <input name="hits" type="number" min="1" max="99" value="1"></label>
+        <label>Skill element <select name="skillElement"></select></label>
+        <fieldset>
+          <legend>Target</legend>
+          <label>Monster <span class="mon-pick"><img id="mon-img" alt="" hidden><input name="monster" list="monster-list" placeholder="type a name…" autocomplete="off"></span></label>
+          <label>Race <select name="race"></select></label>
+          <label>Size <select name="size"></select></label>
+          <label>Element <select name="targetElement"></select></label>
+          <label>DMG reduction % <input name="targetReduction" type="number" min="0" max="80" value="0"></label>
+        </fieldset>
+        <label>Card rolls <select name="roll"><option value="min">Lowest</option><option value="avg" selected>Average</option><option value="max">Highest</option></select></label>
+        <label>Crit base × <input name="critBase" type="number" min="1" step="0.1" value="1.5"></label>
+      </form>
+      <p class="note atk-note" id="atk-note"></p>
+      <datalist id="monster-list"></datalist>
+      <div id="job-grid" class="job-grid" hidden></div>
+      <div class="panel-grid">
+        <div class="panel-box">
+          <div class="panel-head"><b>Your character now</b>
+            <div class="seg mode-seg" id="mode-seg">
+              <button type="button" data-mode="panel">From my character screen</button>
+              <button type="button" data-mode="gear">Build from gear only</button>
+            </div>
+          </div>
+          <div class="shot-row">
+            <label class="shot-btn">📷 Read stats from a screenshot<input type="file" id="shot-file" accept="image/*" hidden></label>
+            <span class="note">or paste one here (Ctrl+V / ⌘V). It is read on your device; nothing is uploaded.</span>
+          </div>
+          <div id="shot-status" class="note"></div>
+          <div id="shot-review"></div>
+          <div id="panel-fields" class="panel-fields"></div>
+          <p class="note" id="panel-hint"></p>
+          <p class="note">🔒 Everything you enter stays in this browser and is cleared 60 minutes after your last change. No account, no server.</p>
+        </div>
+        <div class="panel-box">
+          <div class="panel-head"><b>Buffs and party skills</b><span class="note">count for Now and Plan</span></div>
+          <div id="buff-box"></div>
+          <p class="note">Pick the buff skills you use and their level: your job's skills come first, then party buffs from other jobs. Skills whose text is a plain stat are counted; the rest are listed. For food or items, type the stat (5 for 5%). Read your character screen without these buffs on.</p>
+        </div>
+      </div>
+      <div id="build-kpis" class="kpis"></div>
+      <div class="build-actions">
+        <button type="button" id="copy-now">Copy Now → Plan</button>
+        <button type="button" id="clear-plan">Clear Plan</button>
+        <div class="seg gear-view" id="gear-view">
+          <button type="button" data-view="all" class="on">All gear</button>
+          <button type="button" data-view="equip">Equipment</button>
+          <button type="button" data-view="shadow">🛡 Shadow gear</button>
+        </div>
+      </div>
+      <div id="build-table"></div>
+      <div id="build-sets"></div>
+      <div id="build-datalists" hidden></div>
+      <h3>Runes (crystals)</h3>
+      <p class="note">5 runes per side. Main effects marked "dmg" change damage; the ones that only work in some fights (target HP below 20%, stationary, abnormal status…) start switched off, so tick "count" if it fits your fight. Resonance counts every colour of all 5 runes: 2, 4 and 7 of one element light a tier, and only the highest tier counts.</p>
+      <div id="build-runes"></div>
+      <h3>Extra bonuses: Apocalypse, card affixes, gear affixes, Title, Relic, Pet…</h3>
+      <p class="note">Add as many lines as you have. Apocalypse traits and equipment affixes come from the game data (affixes that only work under a condition are listed but not counted). For Title, Relic, Pet or anything else, pick the stat and type the number the game shows (type 5 for 5%).</p>
+      <div id="build-extras"></div>
+      <h3>Stats: Now vs Plan</h3>
+      <div id="build-stats"></div>
+      <div id="build-notes" class="note"></div>
+    </section>
+
+    <!-- SUPPORT: heals, shields, party buffs -->
+    <section id="tab-support" class="tab">
+      <ol class="steps">
+        <li><span><b>Pick</b> your support job</span></li>
+        <li><span><b>Type</b> M.ATK, P.ATK and Healing% from your character screen</span></li>
+        <li><span><b>Set</b> your skill levels and the buffs you use</span></li>
+        <li><span><b>Compare</b>: gear you plan in the Damage tab shows here as Plan</span></li>
+      </ol>
+      <div id="sup-jobs" class="sup-jobs"></div>
+      <div class="panel-grid">
+        <div class="panel-box">
+          <div class="panel-head"><b>You (character screen)</b><span class="note">read it without buffs on</span></div>
+          <div class="shot-row">
+            <label class="shot-btn">📷 Read from a screenshot<input type="file" id="sup-shot-file" accept="image/*" hidden></label>
+            <span class="note">or paste one here (Ctrl+V / ⌘V). One screenshot fills this tab and the Damage tab.</span>
+          </div>
+          <div id="sup-shot-status" class="note"></div>
+          <div id="sup-shot-review"></div>
+          <div id="sup-me" class="panel-fields"></div>
+          <label class="check"><input type="checkbox" id="sup-selfbuff"> Add my own buffs (ticked below) to my M.ATK and P.ATK</label>
+          <p class="note" id="sup-gear"></p>
+          <p class="note">🔒 Saved in this browser only, cleared 60 minutes after your last change.</p>
+        </div>
+        <div class="panel-box">
+          <div class="panel-head"><b>The friend you support</b><span class="note">for shields, Max HP heals and buff value</span></div>
+          <div id="sup-friend" class="panel-fields"></div>
+        </div>
+      </div>
+      <div id="sup-kpis" class="kpis"></div>
+      <h3>Heals</h3>
+      <div id="sup-mods" class="sup-mods"></div>
+      <div id="sup-heals"></div>
+      <h3>Party buffs you give</h3>
+      <p class="note">Tick the buffs you keep up. ATK, M.ATK, ATK% and damage bonuses become "your friend hits harder by"; stats like STR, CRIT or ASPD are listed as they are, because the game's stat formula is not public.</p>
+      <div id="sup-buffs"></div>
+      <h3>Protection and utility</h3>
+      <div id="sup-protect"></div>
+      <div id="sup-notes" class="note"></div>
+    </section>
+
+    <!-- CARD FUSION -->
+    <section id="tab-fusion" class="tab">
+      <ol class="steps">
+        <li><span><b>Pick</b> the slot, your main card and the card you will feed it</span></li>
+        <li><span><b>Set</b> the affixes each card has now</span></li>
+        <li><span><b>Choose</b> the affix you want, and a lock if both cards are the same quality</span></li>
+        <li><span><b>Read</b> your chance per fusion and the RM it takes on average</span></li>
+      </ol>
+      <form id="fusion-form" class="controls">
+        <label>Slot <select name="slot"></select></label>
+        <label>Spirit Pieces per fusion <input name="pieces" type="number" min="0" placeholder="from game"></label>
+      </form>
+      <div class="fusion-grid">
+        <div class="fusion-card" id="fusion-main"></div>
+        <div class="fusion-plus">+</div>
+        <div class="fusion-card" id="fusion-mat"></div>
+      </div>
+      <div class="controls fusion-pick">
+        <label>Lock <select id="fusion-lock"></select></label>
+        <label>Affix you want <select id="fusion-target"></select></label>
+      </div>
+      <div id="fusion-problems"></div>
+      <div id="fusion-kpis" class="kpis"></div>
+      <h3>Each position</h3>
+      <div id="fusion-positions"></div>
+      <h3>Every possible result</h3>
+      <div id="fusion-outcomes"></div>
+      <p class="note">These odds follow rtnw.online's model: each position comes from the main or the material card, weighted by affix tier
+        (green 40,000, blue 20,000, purple 10,000, so the lower tier is more likely); fixed effects are 50/50. The game's real rule is not public.
+        Each fusion uses up the material card. How many Spirit Pieces a fusion takes is not in the data, so type it from the game (a Spirit Piece costs 2 Bound Starstones).</p>
     </section>
 
     <!-- CARDS -->
