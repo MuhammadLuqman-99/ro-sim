@@ -46,6 +46,6 @@ npm test                  # refine maths checks
 
 ## Deploy
 
-Live at https://muhammadluqman-99.github.io/ro-sim/ (GitHub Pages, free). It can also run on Vercel: import the repo at vercel.com/new and `vercel.json` does the rest (tests run as the build step, `web/` is served, images and the OCR files are cached).
+Live at **https://ro-sim.vercel.app** (Vercel) and https://muhammadluqman-99.github.io/ro-sim/ (GitHub Pages). Both deploy on every push to `main`: Vercel runs the tests as its build step and serves `web/` (`vercel.json`; `.vercelignore` keeps `data/raw` out), and the Pages workflow does the same.
 Every push to `main` runs the tests and publishes `web/` (`.github/workflows/pages.yml`).
 After a game patch: `./scripts/fetch-data.sh`, check locally, commit `web/data` + `web/img`, push.

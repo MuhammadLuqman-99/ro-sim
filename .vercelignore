@@ -1,0 +1,4 @@
+# Only what the site and its tests need goes up to Vercel.
+data/raw/
+docs/
+.DS_Store
