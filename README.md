@@ -10,7 +10,7 @@ really give, and what a refine goal costs in real money (RM, ฿, S$, Rp, ₱ or
 ```sh
 ./scripts/fetch-data.sh   # pull fresh game data (rtnw.online's SEA client export; roworlddb.com for jobs rtnw has no skills for yet)
 ./scripts/serve.sh        # http://localhost:8790
-npm test                  # refine, damage, fusion, support, money and screenshot-reader checks
+npm test                  # refine, damage, fusion, support, money and screenshot-reader checks (stats and gear)
 ```
 
 ## Tabs
@@ -18,7 +18,7 @@ npm test                  # refine, damage, fusion, support, money and screensho
 | Tab | What it answers |
 |---|---|
 | Refine cost | Real money (your currency) to go from +A to +B: typical (P50), bad luck (P90, P99), chance your budget is enough. Counts materials you already own. Shows which +1 steps eat the money. |
-| Damage | Pick your job (icons), your attack skill and level (fills Skill %, flat damage, hits, element and attack type from the game data) and the target monster from the Monster Album (fills race, size and element). Type your character-screen stats or read them from a screenshot (OCR in the browser, nothing uploaded); then change only the slots you care about (Now vs Plan): item (type to search), refine (− / +), card, shadow gear with one-click set fill, gear set bonuses, 5 runes with resonance, Apocalypse traits, card and gear affixes, pets by bond level, skill buffs by job and level, typed buffs. Shows damage per hit and crit, % change, the cost of the Plan's refines and the cost per +1% damage. Saved only in the browser for 60 minutes. Works on phones. |
+| Damage | Pick your job (icons), your attack skill and level (fills Skill %, flat damage, hits, element and attack type from the game data) and the target monster from the Monster Album (fills race, size and element). Type your character-screen stats or read them from screenshots, and read your gear the same way: screenshot each piece with its details card open (scroll the card and screenshot again) and the page fills Now and Plan with the item, refine, cards, traits, enchant and gems (OCR in the browser, nothing uploaded); then change only the slots you care about (Now vs Plan): item (type to search), refine (− / +), card, shadow gear with one-click set fill, gear set bonuses, 5 runes with resonance, Apocalypse traits, card and gear affixes, pets by bond level, skill buffs by job and level, typed buffs. Shows damage per hit and crit, % change, the cost of the Plan's refines and the cost per +1% damage. Saved only in the browser for 60 minutes. Works on phones. |
 | Support | For Acolyte, Priest, High Priest, Bard, Dancer, Creator, Kanos and the rest: pick the job (icons), type M.ATK / P.ATK / Healing% from the character screen, set skill levels. Shows every heal per hit, per cast and HP/s (Heal, Sanctuary, Coluseo Heal, Ultimates, songs, Potion Pitcher), heal passives (Meditatio, Purgatorial Angel), how much harder a friend hits with your party buffs, and shields on a friend's Max HP. The gear you plan in the Damage tab shows up as Plan with its cost. |
 | Fusion | Main + material card with their affixes, lock, the affix you want: chance per position, every possible result, fusions needed and their cost (Spirit Pieces typed from the game). |
 | Cards | All 195 cards: slot, effect, MVP or not, which monster drops it and at what rate. Search by stat ("CRIT", "ATK%"). |
@@ -33,6 +33,7 @@ npm test                  # refine, damage, fusion, support, money and screensho
 - Legendary Ore (blessing): the data says +1 point per use, which may be wrong. Read the rate
   the game shows with the ore on and type it in.
 - Currency: pick where you top up in the header (Malaysia, Thailand, Singapore, Indonesia, Philippines or US$); the first visit guesses from the time zone. Each default price per Starstone is that country's 12,980-Starstone pack from a top-up seller (RM 850, ฿6,831, S$266.29, Rp3,919,894, ₱12,972, US$212; Jul–Nov 2026). Type your own price per Starstone if you top up cheaper.
+- Gear from screenshots: the page finds the light cards in a screenshot (`web/lib/shotpanels.js`), reads each one alone, and `web/lib/gearscan.js` joins the screenshots of one piece (its title scrolls, so each shows a different bit of the name) and matches it to the game data by slot, level, name and base stats. The item and the first card go into the slot; everything else on the card (second card, card affixes, traits, enchant, gems, shadow affixes) goes in as extra lines with the exact numbers shown. An item the data does not have (some job weapons) is said so and left empty, never swapped for a look-alike. Class damage ("DMG vs Archer"), defence lines and skill text are read but not counted.
 - `data/raw` is not committed. `web/data` and `web/img` are, so the site deploys as plain files; `fetch-data.sh` rebuilds all three.
 
 ## Not built yet
@@ -43,6 +44,8 @@ npm test                  # refine, damage, fusion, support, money and screensho
 - Skills: rtnw.online first. Sage, Scholar, Rogue and Stalker are live in SEA but have no skills on rtnw yet (Nov 2026), so theirs come from roworlddb.com (same file format); `fetch-data.sh` switches each job back to rtnw once rtnw has it. Skills that also scale with a stat ("378% + AGI × 1.13%") count only the fixed % and say so.
 - Card Fusion odds follow rtnw.online's model (weights by affix tier); the game's real rule and the Spirit Pieces per fusion are not in the data.
 - Rune main effects that only work in some fights start switched off; tick "count" when they apply. Gear affixes that only work under a condition are listed, not counted.
+- Reading runes, pets and relics from screenshots (gear and stats only for now).
+- A second card pick per slot: the game has two card slots per piece, the gear table one, so a second card read from a screenshot is extra lines.
 - Kafra box / gacha odds (not in the export).
 
 ## Deploy

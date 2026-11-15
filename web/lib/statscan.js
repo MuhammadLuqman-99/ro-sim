@@ -14,14 +14,15 @@ const LABELS = [
   [/\bCRIT(?:ical)?\s*DMG\b/i, () => "critdmg", true],
   [/\bCRIT\s*RES(?:istance)?\b/i, () => "critres", false],
   // reductions first, so "Ranged P.DMG Reduction" is never read as the ranged bonus
-  [/\bMelee\s*P\.?\s*DMG\s*Reduction/i, () => "mpred", true],
-  [/\bRanged\s*P\.?\s*DMG\s*Reduction/i, () => "rpred", true],
-  [/\bRanged\s*M\.?\s*DMG\s*Reduction/i, () => "rmred", true],
+  // the stats page cuts long labels short ("PDMGRedu"), so "Red…" is enough
+  [/\bMelee\s*P\.?\s*DMG\s*Red\w*/i, () => "mpred", true],
+  [/\bRanged\s*P\.?\s*DMG\s*Red\w*/i, () => "rpred", true],
+  [/\bRanged\s*M\.?\s*DMG\s*Red\w*/i, () => "rmred", true],
   [/\bMelee\s*P\.?\s*DMG(?:\s*Bonus)?/i, () => "melee", true],
   [/\bRanged\s*P\.?\s*DMG(?:\s*Bonus)?/i, () => "ranged", true],
   [/\bRanged\s*M\.?\s*DMG(?:\s*Bonus)?/i, () => "rmagic", true],
-  [/\bP\.?\s*DMG\s*Reduction/i, () => "pred", true],
-  [/\bM\.?\s*DMG\s*Reduction/i, () => "mred", true],
+  [/\bP\.?\s*DMG\s*Red\w*/i, () => "pred", true],
+  [/\bM\.?\s*DMG\s*Red\w*/i, () => "mred", true],
   [/\bP\.?\s*DMG(?:\s*Bonus)?/i, () => "pdmg", true],
   [/\bM\.?\s*DMG(?:\s*Bonus)?/i, () => "mdmg", true],
   [/\bReceived\s*Healing(?:\s*Bonus)?|\bHealing\s*Received/i, () => "rheal", true],
@@ -29,6 +30,9 @@ const LABELS = [
   [new RegExp(`\\bDMG\\s*(?:vs\\.?|to)\\s*(${RACES.join("|")})\\b`, "i"), (m) => RACE_KEY(m[1]), true],
   [new RegExp(`\\bDMG\\s*(?:vs\\.?|to)\\s*(${SIZES.join("|")})\\b`, "i"), (m) => `size:${cap(m[1])}`, true],
   [new RegExp(`\\b(${ELEMS.join("|")})\\s*DMG\\b(?!\\s*Reduction)`, "i"), (m) => `elem:${cap(m[1])}`, true],
+  // "PDMG Bonus%" with its first letters cut off: which one it is comes from the label beside it (see CUT).
+  // After the element labels, so "Fire DMG Bonus" stays Fire.
+  [/\bD?MG\s*Bonus\b/i, () => CUT, true],
   [/\bCRIT(?:\s*Rate)?\b/i, () => "crit", false],
   [/\bASPD\b/i, () => "aspd", true],
   [/\bM\.?\s*ATK\b|\bMATK\b/i, () => "matk", false],
@@ -41,6 +45,18 @@ const LABELS = [
   [/\bSTR\b/, () => "str", false], [/\bAGI\b/, () => "agi", false], [/\bVIT\b/, () => "vit", false],
   [/\bINT\b/, () => "int", false], [/\bDEX\b/, () => "dex", false], [/\bLUK\b/, () => "luk", false],
 ];
+
+const CUT = "?bonus";
+// The stats page has two columns: PDMG Bonus beside PDMG Reduction, MDMG Bonus beside MDMG Reduction.
+const BESIDE = { pred: "pdmg", mred: "mdmg" };
+// A general label right after what is left of a cut "Melee" or "Ranged" ("ee PDMG%", "anged PDMG%",
+// "Yanged" with a misread first letter) is not the general stat. Any other stray letter in front is just noise.
+function afterScrap(before) {
+  const tok = (before.match(/([A-Za-z]{2,6})\s$/) || [])[1]?.toLowerCase();
+  if (!tok) return false;
+  return ["melee", "ranged"].some((w) => tok !== w && (w.endsWith(tok) || (tok.length >= 3 && w.endsWith(tok.slice(1)))));
+}
+const GENERAL = new Set(["pdmg", "mdmg"]);
 
 // "2,345", "18.5%", "150 + 45" (base + bonus, as the stat window shows it)
 const NUMBER = /([+-]?\d{1,3}(?:,\d{3})+|[+-]?\d+(?:\.\d+)?)\s*(%)?(?:\s*\+\s*(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(%)?)?/;
@@ -62,11 +78,15 @@ export function parseStats(text) {
       }
     }
     hits.sort((a, b) => a.start - b.start);
+    hits.forEach((h, i) => {
+      if (h.key === CUT) h.key = BESIDE[hits[i + 1]?.key] || null;
+      else if (GENERAL.has(h.key) && afterScrap(line.slice(0, h.start))) h.key = null;
+    });
     // the number that follows each label, before the next label
     hits.forEach((h, i) => {
       const stop = i + 1 < hits.length ? hits[i + 1].start : line.length;
       const m = line.slice(h.end, stop).match(NUMBER);
-      if (!m || found.has(h.key)) return;
+      if (!m || !h.key || found.has(h.key)) return;
       let v = num(m[1]) + (m[3] ? num(m[3]) : 0);
       if (!Number.isFinite(v)) return;
       if (h.pct) v = v / 100;

@@ -1,6 +1,8 @@
 import { expected, simulate, percentile, stepRates } from "./lib/refine.js";
 import { SLOTS, RACES, SIZES, ELEMENTS, sumStats, damage, upgradeStarstones, resonance, runeLevel, withPanel, skillBuffStats, setBonuses, gearAtk } from "./lib/build.js";
 import { parseStats } from "./lib/statscan.js";
+import { findPanels, inkImage } from "./lib/shotpanels.js";
+import { readGear, parseTip } from "./lib/gearscan.js";
 import { CURRENCIES, fmt, formatMoney, guessCurrency, budgetStep, defaultBudget } from "./lib/money.js";
 import { chainOf, defaultLevel, descOf, levelOf, healMods, healSkill, withBuffs, buffGain, gainKeys } from "./lib/support.js";
 import { slotsOf, outcomes, problems, resultLines, targetChance, hasEffect, mainChance, option as fusionOption } from "./lib/fusion.js";
@@ -1460,13 +1462,40 @@ async function prepareImage(blob) {
   g.putImageData(img, 0, 0);
   return c;
 }
+// The cards in a screenshot (a gear tooltip, a stats panel), each cut out and
+// cleaned for OCR on its own (lib/shotpanels.js). A gear tooltip read alone
+// comes out clean; read with the whole screen around it, it does not.
+async function cardImages(blob) {
+  const bmp = await createImageBitmap(blob);
+  const fit = Math.min(1, 3000 / Math.max(bmp.width, bmp.height)); // a huge photo shrinks
+  const w = Math.round(bmp.width * fit), h = Math.round(bmp.height * fit);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+  const rgba = g.getImageData(0, 0, w, h).data;
+  return findPanels(rgba, w, h, { max: 3 }).map((box) => {
+    const ink = inkImage(rgba, w, h, box, Math.min(3, 900 / box.w));
+    const out = document.createElement("canvas");
+    out.width = ink.width; out.height = ink.height;
+    const img = new ImageData(ink.width, ink.height);
+    for (let i = 0, q = 0; i < ink.data.length; i++, q += 4) { img.data[q] = img.data[q + 1] = img.data[q + 2] = ink.data[i]; img.data[q + 3] = 255; }
+    out.getContext("2d").putImageData(img, 0, 0);
+    return out;
+  });
+}
 // Both the Damage tab and the Support tab can read a screenshot. It is the same
 // character, so one read fills both: every stat goes to the Damage tab's
 // screen numbers, and M.ATK, P.ATK and Healing% also go to the Support tab.
+// Gear tooltips go to the Damage tab's gear table (tips = the text of every
+// tooltip card read so far, gear = what lib/gearscan.js makes of them).
 const SHOT = {
-  build: { file: "#shot-file", status: "#shot-status", review: "#shot-review", rows: [], raw: [], seq: 0, chain: Promise.resolve() },
-  support: { file: "#sup-shot-file", status: "#sup-shot-status", review: "#sup-shot-review", rows: [], raw: [], seq: 0, chain: Promise.resolve() },
+  build: { file: "#shot-file", status: "#shot-status", review: "#shot-review", rows: [], raw: [], tips: [], gear: [], seq: 0, chain: Promise.resolve() },
+  support: { file: "#sup-shot-file", status: "#sup-shot-status", review: "#sup-shot-review", rows: [], raw: [], tips: [], gear: [], seq: 0, chain: Promise.resolve() },
 };
+// Cancel or apply: forget what was read, and drop screenshots still waiting.
+function resetShot(S) { S.seq++; S.rows = []; S.raw = []; S.tips = []; S.gear = []; $(S.review).innerHTML = ""; }
 const SUP_SHOT_KEYS = ["matk", "atk", "heal"];
 // The game splits its stats over more than one page, so screenshots add up:
 // each one is read in turn and its stats join the same list (a stat already
@@ -1479,7 +1508,7 @@ function readShot(files, where = "build") {
 async function readOne(blob, where, seq) {
   const S = SHOT[where], status = $(S.status);
   if (seq !== S.seq) return; // cancelled while waiting its turn
-  const skip = (why) => { status.textContent = S.rows.length ? `${status.textContent.replace(/ Skipped:.*$/, "")} Skipped: ${why}` : why; };
+  const skip = (why) => { status.textContent = S.rows.length || S.gear.length ? `${status.textContent.replace(/ Skipped:.*$/, "")} Skipped: ${why}` : why; };
   if (!/^image\//.test(blob.type || "")) return skip(`${blob.name || "a file"} is not an image.`);
   if (blob.size > 15 * 1024 * 1024) return skip(`${blob.name || "an image"} is too big (over 15 MB).`);
   const n = S.raw.length + 1;
@@ -1490,17 +1519,37 @@ async function readOne(blob, where, seq) {
     status.textContent = `Reading screenshot ${n}…`;
     const { data } = await w.recognize(await prepareImage(blob));
     if (seq !== S.seq) return;
-    S.raw.push(data.text);
+    // then each card in it on its own: that is where a gear tooltip reads clean
+    const cards = [];
+    for (const image of await cardImages(blob)) {
+      cards.push((await w.recognize(image)).data.text);
+      if (seq !== S.seq) return;
+    }
+    S.raw.push([data.text, ...cards.map((t, i) => `· card ${i + 1} of this screenshot, read alone ·\n${t}`)].join("\n"));
+    S.tips.push(...cards);
+    const job = $("#build-form").job.value ? Number($("#build-form").job.value) : null;
+    const off = new Set(S.gear.filter((g) => !g.use).map((g) => g.slot)); // keep what was unticked
+    const worn = Object.fromEntries(SLOTS.map((sl) => [sl.id, B.now[sl.id]?.item ?? null]));
+    const scan = readGear(S.tips, { items: B.gear.items, cards: B.cards }, job, worn);
+    S.gear = scan.gear.map((g) => ({ ...g, use: !off.has(g.slot) }));
+    // A gear tooltip or the Enhance panel is full of "ATK +250" and "HP 548"
+    // that are the gear's numbers, not the character's: no stats from those.
+    // Any gear heading counts, so a tooltip the gear reader could not make sense of is still not a stats page.
+    // ("Base Stats" is not in the list: the character's own stats page has that heading too.)
+    const gearScreen = cards.some((t) => parseTip(t)) ||
+      /Enhance L[vV]|Success Rate|How to Obtain|Overall Rating|Refine Lv|Special Skill|Enchant Stone|Apocalypse (?:Trait|Attribute)|Affix Stats|Class Limit|Set Bonus/i.test([data.text, ...cards].join("\n"));
     const have = new Set(S.rows.map((r) => r.key));
-    const fresh = parseStats(data.text).filter((r) => !have.has(r.key)).map((r) => ({ ...r, use: true, shot: n }));
+    const fresh = gearScreen ? [] : parseStats([...cards, data.text].join("\n")).filter((r) => !have.has(r.key)).map((r) => ({ ...r, use: true, shot: n }));
     S.rows.push(...fresh);
     if (where === "support") S.rows.sort((a, b) => SUP_SHOT_KEYS.includes(b.key) - SUP_SHOT_KEYS.includes(a.key));
     const mine = S.rows.filter((r) => SUP_SHOT_KEYS.includes(r.key)).length;
     const shots = S.raw.length > 1 ? `${S.raw.length} screenshots: ` : "";
-    status.textContent = !S.rows.length ? "No stats found. Try a sharper screenshot of just the stats panel, or type them in."
-      : `${shots}${shots ? "found" : "Found"} ${S.rows.length} stats${S.raw.length > 1 ? ` (${fresh.length} new from this one)` : ""}. ` +
-        (where === "support" && !mine ? "None of them is M.ATK, P.ATK or Healing%: add the page that has them, or type them in. "
-          : "Add another screenshot for the other stats page, or check them and apply.");
+    const found = [S.rows.length ? `${S.rows.length} stats` : "", S.gear.length ? `${S.gear.length} gear piece${S.gear.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
+    status.textContent = !found ? "No stats or gear found. Stats: a sharp screenshot of the stats page. Gear: tap the piece so its details card is open, then screenshot it."
+      : `${shots}${shots ? "found" : "Found"} ${found}${S.raw.length > 1 && fresh.length ? ` (${fresh.length} new stats from this one)` : ""}. ` +
+        (where === "support" && S.rows.length && !mine ? "None of the stats is M.ATK, P.ATK or Healing%: add the page that has them, or type them in. "
+          : "Add more (the other stats page, more gear, the rest of a gear card after scrolling it), or check them and apply.") +
+        (scan.unplaced ? ` ${scan.unplaced} more gear card${scan.unplaced === 1 ? " was" : "s were"} read but could not be given a slot (slot not readable, or a third accessory).` : "");
     renderShotReview(where);
   } catch (err) {
     if (seq === S.seq) status.textContent = `Could not read it: ${err?.message || err}`;
@@ -1510,16 +1559,54 @@ function renderShotReview(where) {
   const S = SHOT[where];
   const focused = document.activeElement?.closest?.(S.review) ? document.activeElement.dataset.shotVal : null;
   const seen = S.raw.length ? `<details class="note"><summary>What the reader saw</summary><pre>${esc(S.raw.map((t, i) => (S.raw.length > 1 ? `── screenshot ${i + 1} ──\n` : "") + t).join("\n"))}</pre></details>` : "";
-  if (!S.rows.length) { $(S.review).innerHTML = seen; return; }
-  $(S.review).innerHTML = `<table class="mid shot-table"><thead><tr><th></th><th>Stat</th><th class="num">Value</th><th>From the line</th></tr></thead><tbody>
+  if (!S.rows.length && !S.gear.length) { $(S.review).innerHTML = seen; return; }
+  const stats = S.rows.length ? `<table class="mid shot-table"><thead><tr><th></th><th>Stat</th><th class="num">Value</th><th>From the line</th></tr></thead><tbody>
     ${S.rows.map((r, i) => `<tr class="${where === "support" && SUP_SHOT_KEYS.includes(r.key) ? "hot" : ""}"><td><input type="checkbox" data-shot-use="${i}" ${r.use ? "checked" : ""}></td><td>${esc(statLabel(r.key))}</td>
       <td class="num"><input type="number" step="any" data-shot-val="${i}" value="${PCT_KEYS.test(r.key) ? +(r.value * 100).toFixed(2) : r.value}">${PCT_KEYS.test(r.key) ? "%" : ""}</td>
-      <td class="note">${S.raw.length > 1 ? `<span class="tag">#${r.shot}</span>` : ""}${esc(r.raw.slice(0, 60))}</td></tr>`).join("")}</tbody></table>
+      <td class="note">${S.raw.length > 1 ? `<span class="tag">#${r.shot}</span>` : ""}${esc(r.raw.slice(0, 60))}</td></tr>`).join("")}</tbody></table>` : "";
+  const line = (x) => `${esc(x.label.split(" · ").slice(1).join(" · "))}: ${esc(statLabel(x.key))} +${fmtStat(x.key, x.value)}`;
+  const gear = S.gear.length ? `<table class="mid shot-table shot-gear"><thead><tr><th></th><th>Slot</th><th>Gear</th><th class="num">Refine</th><th>Cards</th><th>Its other lines</th></tr></thead><tbody>
+    ${S.gear.map((g, i) => `<tr><td><input type="checkbox" data-gear-use="${i}" ${g.use ? "checked" : ""} aria-label="Use ${esc(g.slotLabel)}"></td><td>${esc(g.slotLabel)}</td>
+      <td>${g.item ? `${g.item.img ? `<img class="line-icon" src="img/${esc(g.item.img)}" alt="">` : ""}<b class="q${g.item.q}">${esc(g.item.n)}</b> <span class="note">Lv${g.item.lv} · ${esc(QUALITY[g.item.q] || g.item.q)}</span>${g.sure ? "" : ` <span class="pill flat">check it: more than one item fits</span>`}`
+        : `<b>${esc(g.read || "name not read")}</b> <span class="note">Lv${g.lv}</span> <span class="pill flat" title="The item itself stays empty (pick it by hand if you find it); its refine, cards and other lines still go in.">not in the game data</span>`}</td>
+      <td class="num">${g.refine == null ? `<span class="note" title="No screenshot showed its Refine Lv. line">not shown</span>` : `<b>+${g.refine}</b>`}</td>
+      <td class="shot-cards">${g.cards.length ? cardNames(g.cards) : `<span class="note" title="No screenshot showed its cards">not shown</span>`}</td>
+      <td>${g.extras.length || g.skipped.length ? `<details><summary>${g.extras.length} counted${g.skipped.length ? `, ${g.skipped.length} not` : ""}</summary>
+        ${g.extras.map(line).join("<br>")}${g.skipped.length ? `<div class="note">Not counted:<br>${g.skipped.map((x) => `${esc(x.line.slice(0, 70))} (${esc(x.why)})`).join("<br>")}</div>` : ""}</details>` : `<span class="note">none</span>`}</td></tr>`).join("")}</tbody></table>
+    <div class="note">Gear goes into <b>Now</b> below, and into <b>Plan</b> as a copy: then change only what you want to try in Plan. A piece holds two cards and the card pick holds one, so the second card comes in as extra lines with its exact numbers, like traits, enchant and gems.</div>` : "";
+  $(S.review).innerHTML = `${stats}${gear}
     <div class="extra-add"><button type="button" data-shot-apply>✓ Use these</button><button type="button" data-shot-cancel>Cancel</button>
-      <label class="shot-more">＋ Add another screenshot<input type="file" accept="image/*" multiple hidden data-shot-more></label></div>
-    ${where === "support" ? `<div class="note">Highlighted stats fill this tab; the others fill the Damage tab's character screen.</div>` : ""}
+      <label class="shot-more">＋ Add more screenshots<input type="file" accept="image/*" multiple hidden data-shot-more></label></div>
+    ${where === "support" && S.rows.length ? `<div class="note">Highlighted stats fill this tab; the others fill the Damage tab's character screen.</div>` : ""}
     ${seen}`;
   if (focused != null) $(`${S.review} [data-shot-val="${focused}"]`)?.focus();
+}
+// "Orc Archer ×2" for two of the same card
+function cardNames(names) {
+  const count = new Map();
+  for (const n of names) { const k = n.replace(/\s*Card$/i, ""); count.set(k, (count.get(k) || 0) + 1); }
+  return [...count].map(([k, n]) => `${esc(k)}${n > 1 ? ` ×${n}` : ""}`).join("<br>");
+}
+// Gear read from tooltips fills Now. Plan gets the same where it had nothing of
+// its own for that slot, so both sides start equal and only Plan is changed.
+// The piece's extra lines (labelled with its slot) replace the ones from an
+// earlier read of the same slot.
+function applyGear(list) {
+  for (const g of list) {
+    const before = B.now[g.slot], plan = B.plan[g.slot];
+    const follows = !plan || (plan.item == null && plan.card == null) || JSON.stringify(plan) === JSON.stringify(before);
+    const shadow = SLOTS.find((sl) => sl.id === g.slot)?.shadow;
+    // an item the data does not have leaves the slot's item empty: keeping the old item would add its stats to this piece's lines
+    const slot = { item: g.item?.id ?? null, refine: g.refine ?? (Number(before?.refine) || 0),
+      card: shadow ? null : g.cards.length ? g.card?.id ?? null : before?.card ?? null };
+    B.now[g.slot] = slot;
+    if (follows) B.plan[g.slot] = { ...slot };
+    const mine = (x) => x.kind === "stat" && String(x.label || "").startsWith(`${g.slotLabel} · `);
+    for (const side of follows ? ["now", "plan"] : ["now"]) B[side].extras = [...(B[side].extras || []).filter((x) => !mine(x)), ...g.extras.map((x) => ({ ...x }))];
+  }
+  renderBuildTable();
+  renderExtras();
+  renderBuildResults();
 }
 function applyShot(rows) {
   for (const r of rows) B.panel[r.key] = r.value;
@@ -1540,6 +1627,7 @@ function setupShot() {
       const t = e.target;
       if (t.dataset.shotMore != null) { if (e.type === "change") { readShot(t.files || [], where); t.value = ""; } return; }
       if (t.dataset.shotUse != null) S.rows[Number(t.dataset.shotUse)].use = t.checked;
+      if (t.dataset.gearUse != null) S.gear[Number(t.dataset.gearUse)].use = t.checked;
       if (t.dataset.shotVal != null) {
         const r = S.rows[Number(t.dataset.shotVal)];
         const v = Number(t.value);
@@ -1549,14 +1637,17 @@ function setupShot() {
     $(S.review).addEventListener("input", keep);
     $(S.review).addEventListener("change", keep);
     $(S.review).addEventListener("click", (e) => {
-      if (e.target.dataset.shotCancel != null) { S.seq++; S.rows = []; S.raw = []; $(S.review).innerHTML = ""; $(S.status).textContent = ""; }
+      if (e.target.dataset.shotCancel != null) { resetShot(S); $(S.status).textContent = ""; }
       if (e.target.dataset.shotApply != null) {
-        const use = S.rows.filter((r) => r.use);
-        S.seq++; S.rows = []; S.raw = []; $(S.review).innerHTML = ""; // screenshots still waiting are dropped
-        const sup = applyShot(use);
-        $(S.status).textContent = where === "support"
-          ? `Applied ${sup} stat${sup === 1 ? "" : "s"} here${use.length > sup ? ` and ${use.length - sup} to the Damage tab` : ""}.`
-          : `Applied ${use.length} stats to "Your character now"${sup ? ` (M.ATK, P.ATK and Healing% also went to the Support tab)` : ""}.`;
+        const use = S.rows.filter((r) => r.use), gear = S.gear.filter((g) => g.use);
+        resetShot(S);
+        const sup = use.length ? applyShot(use) : 0;
+        if (gear.length) applyGear(gear);
+        const pieces = gear.length ? `${gear.length} gear piece${gear.length === 1 ? "" : "s"} to Now and Plan in the Damage tab's gear table` : "";
+        $(S.status).textContent = !use.length && !gear.length ? "Nothing was ticked."
+          : where === "support"
+            ? `Applied ${[use.length ? `${sup} stat${sup === 1 ? "" : "s"} here${use.length > sup ? ` and ${use.length - sup} to the Damage tab` : ""}` : "", pieces].filter(Boolean).join(", and ")}.`
+            : `Applied ${[use.length ? `${use.length} stats to "Your character now"${sup ? " (M.ATK, P.ATK and Healing% also went to the Support tab)" : ""}` : "", pieces].filter(Boolean).join(", and ")}.`;
       }
     });
   }

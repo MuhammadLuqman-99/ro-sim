@@ -71,3 +71,21 @@ test("reductions are not read as damage bonuses", () => {
 test("Mech is a race the reader knows", () => {
   assert.ok(Math.abs(get(parseStats("DMG vs Mech 5%"), "race:Mech") - 0.05) < 1e-12);
 });
+
+test("labels the stats page cuts short are not read as another stat", () => {
+  // real lines from the two-column Detailed Stats page
+  const rows = parseStats("MG Bonus% 34.48% PDMGRedu 3.50%\nDMG Bonus! 16.28%  MDMG Redu 2.50%\nee PDMG% 0% Melee PDM( 16.60%\nYanged MDW 0% anged MDM 9.747%");
+  assert.ok(Math.abs(get(rows, "pdmg") - 0.3448) < 1e-12); // "PDMG Bonus%" lost its first letters; the PDMG Reduction beside it says which it is
+  assert.ok(Math.abs(get(rows, "pred") - 0.035) < 1e-12);
+  assert.ok(Math.abs(get(rows, "mdmg") - 0.1628) < 1e-12);
+  assert.ok(Math.abs(get(rows, "mred") - 0.025) < 1e-12);
+  assert.equal(get(rows, "melee"), undefined); // "ee PDMG% 0%" was "Melee PDMG%": too little left to trust
+  assert.equal(rows.length, 4);
+});
+
+test("an element's \"DMG Bonus\" stays that element, and a stray letter does not hide PDMG Bonus", () => {
+  assert.ok(Math.abs(get(parseStats("Fire DMG Bonus 12%"), "elem:Fire") - 0.12) < 1e-12);
+  assert.ok(Math.abs(get(parseStats("a P.DMG Bonus 34%"), "pdmg") - 0.34) < 1e-12); // "a" is an icon misread, not a cut "Melee"
+  assert.equal(get(parseStats("anged PDMG% 30.6%"), "pdmg"), undefined);
+  assert.equal(get(parseStats("Yanged MDMG% 9%"), "mdmg"), undefined);
+});

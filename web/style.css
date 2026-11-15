@@ -465,3 +465,9 @@ input.bad { border-color: var(--bad); background: #fff5f5; }
 @media (max-width: 760px) { .mon-pick input { width: 150px; } .atk-skill { max-width: 160px; } }
 .shot-more { display: inline-flex; align-items: center; padding: 4px 10px; border: 1px dashed #93c5fd; border-radius: 999px; color: var(--blue); font-size: 12px; font-weight: 600; cursor: pointer; background: #f5f8ff; }
 .shot-more:hover { background: #e8efff; }
+.shot-gear { margin-top: 10px; }
+.shot-gear td { vertical-align: top; }
+.shot-gear .shot-cards { white-space: nowrap; }
+#shot-review, #sup-shot-review { overflow-x: auto; }
+.shot-gear details summary { cursor: pointer; color: var(--blue); font-weight: 600; white-space: nowrap; }
+.shot-gear details { font-size: 12px; line-height: 1.5; }
