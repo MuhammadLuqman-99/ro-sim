@@ -27,17 +27,23 @@ def save(name, obj):
 # shows is listed in data/raw/images.txt so fetch-data.sh can download it once
 # and the site serves its own copy (no hotlinking).
 ICON_PATHS = load("icon_paths.json")
-wanted = set()
+# roworlddb.com's list only fills icons rtnw does not have (the skills of jobs
+# only roworlddb has); those go to images_rdb.txt and come from roworlddb.
+ICON_RDB = load("icon_paths_rdb.json") if os.path.exists(os.path.join(RAW, "icon_paths_rdb.json")) else {}
+wanted, wanted_rdb = set(), set()
 
 
 def img(name):
-    path = ICON_PATHS.get(name or "") or ICON_PATHS.get((name or "").lower())
+    key = name or ""
+    path, into = ICON_PATHS.get(key) or ICON_PATHS.get(key.lower()), wanted
+    if not path:
+        path, into = ICON_RDB.get(key) or ICON_RDB.get(key.lower()), wanted_rdb
     if not path:
         return None
     path = path.replace("\\", "/")
     if path.startswith("/") or ".." in path.split("/"):
         return None
-    wanted.add(path)
+    into.add(path)
     return path
 
 
@@ -494,6 +500,21 @@ def skill_fx(text):
 
 
 sk_index = load("skills/index.json")["jobs"]
+# Jobs rtnw has no skills for, taken from roworlddb.com when its file was
+# fetched: merged into rtnw's entry (children from both), then each one is
+# added to its parent's children, so the order of the index does not matter.
+if os.path.exists(os.path.join(RAW, "skills", "index_rdb.json")):
+    rdb_jobs = (load("skills/index_rdb.json").get("jobs") or {})
+    added = [k for k, v in rdb_jobs.items()
+             if v.get("has_skills") and not sk_index.get(k, {}).get("has_skills") and os.path.exists(os.path.join(RAW, "skills", f"{k}.json"))]
+    for k in added:
+        old = sk_index.get(k, {})
+        kids = [*(old.get("children") or []), *(rdb_jobs[k].get("children") or [])]
+        sk_index[k] = {**old, **rdb_jobs[k], "children": list(dict.fromkeys(int(c) for c in kids))}
+    for k in added:
+        par = str(sk_index[k].get("parent") or "")
+        if par in sk_index and int(k) not in (sk_index[par].get("children") or []):
+            sk_index[par] = {**sk_index[par], "children": [*(sk_index[par].get("children") or []), int(k)]}
 skill_jobs = {k: {"name": v["job_name"], "parent": v.get("parent"), "children": v.get("children") or [],
                   "img": img(v.get("job_icon_big")) or img(v.get("job_icon")), "hasSkills": bool(v.get("has_skills"))}
               for k, v in sk_index.items()}
@@ -688,8 +709,35 @@ save("monsters.json", mon_out)
 # ---- attack skills: Skill %, flat damage, element and kind per level ----------
 # "400% + 400 Holy Melee P.DMG", "2x70% PDMG", "120%+120 Neutral ranged physical damage", "600% Water MDMG".
 # Formulas that need weapon weight, cart weight or two stats ("250%*(ATK + Weapon Weight*0.7)") do not match on purpose.
-ATK_LINE = re.compile(r"(?:(\d+)\s*x\s*)?(\d+(?:\.\d+)?)%\s*(?:\+\s*(\d[\d,]*)\s*)?(?:AoE\s+)?(?:(" + ELEMS + r")\s+)?(?:(Melee|Ranged)\s+)?"
+# A stat-scaling part ("378%+Agi*1.13%+540") is skipped: the % before it is the skill %, and the
+# skill keeps a note (stat) so the page can say it is not counted.
+ATK_LINE = re.compile(r"(?:(\d+)\s*x\s*)?(?<![*\d.])(\d+(?:\.\d+)?)%\s*(?:\+\s*(STR|AGI|VIT|INT|DEX|LUK)\s*\*\s*[\d.]+%\s*)?"
+                      r"(?:\+\s*(\d[\d,]*)\s*)?(?:AoE\s+)?(?:(" + ELEMS + r")\s+)?(?:(Melee|Ranged)\s+)?"
                       r"(?:(P|M)\.?\s?DMG|(physical|magic(?:al)?)\s+(?:damage|DMG))", re.I)
+WORD_HITS = {"twice": 2, "thrice": 3}
+
+
+def _count(h):
+    n = next((int(g) for g in h.groups() if g and g.isdigit()), None)
+    if n is None:
+        n = next((WORD_HITS[g.lower()] for g in h.groups() if g and g.lower() in WORD_HITS), 1)
+    return max(1, n)
+
+
+def attack_hits(part, m):
+    """How many times the skill % lands. Only counts tied to the damage phrase:
+    right before it ("2 hits of 400%", "dealing 2 times 280%", "2x70%"), a count
+    followed by "each" ("fires 5x Bolts at the target, each dealing", "striking 2x,
+    each hit dealing", "Attacks the target twice, each dealing"), or right after it
+    ("... PDMG twice", "... PDMG 3 times")."""
+    if m.group(1):
+        return max(1, int(m.group(1)))
+    a = max(part.rfind(". ", 0, m.start()), part.rfind("\n", 0, m.start())) + 1
+    before, after = part[a:m.start()], part[m.end():]
+    h = (re.search(r"(?:\b(\d+) (?:hits|rounds|times) of|\b(\d+) times)\s*$", before, re.I)
+         or re.search(r"(?:\b(\d+)\s*x\b|\b(twice|thrice)\b)[^.%]*\beach\b[^.%]*$", before, re.I)
+         or re.match(r"\s*(?:(twice|thrice)\b|(\d+) times\b)", after, re.I))
+    return _count(h) if h else 1
 atk_skills = []
 for fn in sorted(os.listdir(os.path.join(RAW, "skills"))):
     if not re.fullmatch(r"\d+\.json", fn):
@@ -716,13 +764,12 @@ for fn in sorted(os.listdir(os.path.join(RAW, "skills"))):
             if not m:
                 levels = None
                 break
-            hits = re.search(r"(\d+) (?:hits|rounds) of[^%]*$", part[:m.start()])
-            magic = (m.group(6) or "").upper() == "M" or (m.group(7) or "").lower().startswith("magic")
-            side = (m.group(5) or "").lower()
+            magic = (m.group(7) or "").upper() == "M" or (m.group(8) or "").lower().startswith("magic")
+            side = (m.group(6) or "").lower()
             kind = ("magic-ranged" if side == "ranged" else "magic") if magic else side or None
-            levels.append({"pct": float(m.group(2)), "flat": float((m.group(3) or "0").replace(",", "")),
-                           "hits": int(m.group(1)) if m.group(1) else int(hits.group(1)) if hits else 1,
-                           "el": (m.group(4) or "").title() or None, "kind": kind,
+            levels.append({"pct": float(m.group(2)), "flat": float((m.group(4) or "0").replace(",", "")),
+                           "hits": attack_hits(part, m), **({"stat": m.group(3).upper()} if m.group(3) else {}),
+                           "el": (m.group(5) or "").title() or None, "kind": kind,
                            "cd": round((lvls[k].get("cooldown") or 0) / 1000, 2)})
         if not levels:
             continue
@@ -776,6 +823,8 @@ save("shop.json", [
     for i in shop["items"] if (i.get("price") or {}).get("amount")
 ])
 
+with open(os.path.join(RAW, "images_rdb.txt"), "w", encoding="utf-8") as f:
+    f.write("".join(p + "\n" for p in sorted(wanted_rdb - wanted)))
 with open(os.path.join(RAW, "images.txt"), "w", encoding="utf-8") as f:
     f.write("\n".join(sorted(wanted)) + "\n")
 print(f"  {len(wanted)} images listed in {RAW}/images.txt")

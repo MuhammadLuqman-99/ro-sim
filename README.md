@@ -8,7 +8,7 @@ Luqman's own tool for **Ragnarok: The New World (SEA)**: see what cards and gear
 really give, and what a refine goal costs in real money (RM, ฿, S$, Rp, ₱ or US$), before spending money in game.
 
 ```sh
-./scripts/fetch-data.sh   # pull fresh game data (rtnw.online's SEA client export)
+./scripts/fetch-data.sh   # pull fresh game data (rtnw.online's SEA client export; roworlddb.com for jobs rtnw has no skills for yet)
 ./scripts/serve.sh        # http://localhost:8790
 npm test                  # refine, damage, fusion, support, money and screenshot-reader checks
 ```
@@ -40,6 +40,7 @@ npm test                  # refine, damage, fusion, support, money and screensho
 - Card fusion odds (how the 3 affix weights work is unknown even to rtnw.online).
 - Exact damage: the game's formula is not public. The Damage tab uses the usual Ragnarok mobile shape (each bonus type multiplies), ignores target DEF and does not turn STR/INT/etc. into ATK. Trust the % change between two builds more than the raw number.
 - Heals: the skill numbers come from the game text, but how Healing% stacks is not public; the Support tab adds Healing% bonuses together and multiplies the rest.
+- Skills: rtnw.online first. Sage, Scholar, Rogue and Stalker are live in SEA but have no skills on rtnw yet (Nov 2026), so theirs come from roworlddb.com (same file format); `fetch-data.sh` switches each job back to rtnw once rtnw has it. Skills that also scale with a stat ("378% + AGI × 1.13%") count only the fixed % and say so.
 - Card Fusion odds follow rtnw.online's model (weights by affix tier); the game's real rule and the Spirit Pieces per fusion are not in the data.
 - Rune main effects that only work in some fights start switched off; tick "count" when they apply. Gear affixes that only work under a condition are listed, not counted.
 - Kafra box / gacha odds (not in the export).

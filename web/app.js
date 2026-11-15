@@ -1223,7 +1223,7 @@ function renderBuffs() {
       <select id="skill-job" aria-label="Job">${`<option value="">Any job</option>` + jobsWithBuffs.map((j) => `<option value="${j}" ${j === pickJob ? "selected" : ""}>${esc(D.jobs[j]?.name || j)}</option>`).join("")}</select>
     </div>
     ${own.length ? `<div class="skill-sec">${esc(chain.map((j) => D.jobs[j]?.name).join(" · "))}</div><div class="skill-grid">${own.map(tile).join("")}</div>`
-      : pickJob ? `<div class="note no-buffs">${esc(chainNames)}: no buff skills in the game data yet${D.jobs[pickJob] && !D.skills.some((x) => x.job === String(pickJob)) ? " (this job's skills are not out in SEA yet)" : ""}. Party buffs from other jobs are below.</div>` : ""}
+      : pickJob ? `<div class="note no-buffs">${esc(chainNames)}: no buff skills in the game data yet${D.jobs[pickJob] && !D.jobs[pickJob].hasSkills ? " (its own skills are not in the SEA game data yet; they show up here once the data has them)" : ""}. Party buffs from other jobs are below.</div>` : ""}
     <div class="skill-sec">Party buffs from other jobs</div><div class="skill-grid">${party.map(tile).join("")}</div>
     <div class="extra-add skill-pickrow"><span id="skill-chosen"></span><select id="skill-lv" aria-label="Level"></select><button type="button" id="skill-add">+ Add skill</button></div>
     <div class="note" id="skill-preview"></div>
@@ -1313,9 +1313,12 @@ function fillAtkSkills(want, wantLv) {
   const cur = want ?? f.atkSkill.value;
   f.atkSkill.innerHTML = `<option value="">Type my own skill %</option>` + jobs.map((j) => `<optgroup label="${esc(D[j]?.name || j)}">${byJob.get(j)
     .map((s) => `<option value="${esc(s.id)}">${esc(s.name)}${s.ult ? " (Ultimate)" : ""}</option>`).join("")}</optgroup>`).join("");
-  f.atkSkill.value = list.some((s) => String(s.id) === String(cur)) ? String(cur) : "";
+  const found = list.some((s) => String(s.id) === String(cur));
+  f.atkSkill.value = found ? String(cur) : "";
   fillAtkLevels(wantLv);
   atkNote();
+  // a skill saved earlier that the data no longer reads (e.g. its damage now needs a stat formula)
+  if (cur && !found && want !== undefined) $("#atk-note").textContent = "The skill you picked last time can't be worked out from the game data any more (its damage depends on a stat formula). Your Skill % and flat stay as they were; check them against the game.";
 }
 function fillAtkLevels(wantLv) {
   const f = $("#build-form");
@@ -1347,10 +1350,16 @@ function applyAtkSkill() {
 function atkNote() {
   const f = $("#build-form");
   const a = atkLevel();
-  if (!a) { $("#atk-note").textContent = "Pick your attack skill to fill Skill %, flat, hits and element from the game data, or type them yourself."; return; }
+  if (!a) {
+    const j = B.buffData.jobs[f.job.value];
+    $("#atk-note").textContent = j && !j.hasSkills
+      ? `${j.name}'s own skills are not in the SEA game data yet. Pick a skill of the job before it above, or type the Skill % from the game.`
+      : "Pick your attack skill to fill Skill %, flat, hits and element from the game data, or type them yourself.";
+    return;
+  }
   const desc = descOf(a.sk, a.lv);
   const same = Number(f.skill.value) === a.L.pct && Number(f.skillFlat.value) === a.L.flat && Number(f.hits.value) === a.L.hits;
-  $("#atk-note").innerHTML = `${a.sk.img ? `<img class="line-icon" src="img/${esc(a.sk.img)}" alt="">` : ""}<b>${esc(a.sk.name)} Lv${a.lv}</b>: ${esc(desc.length > 260 ? desc.slice(0, 258) + "…" : desc)}${same ? "" : ' <span class="pill flat">numbers changed by hand</span>'}`;
+  $("#atk-note").innerHTML = `${a.sk.img ? `<img class="line-icon" src="img/${esc(a.sk.img)}" alt="">` : ""}<b>${esc(a.sk.name)} Lv${a.lv}</b>: ${esc(desc.length > 260 ? desc.slice(0, 258) + "…" : desc)}${same ? "" : ' <span class="pill flat">numbers changed by hand</span>'}${a.L.stat ? ` <span class="pill flat">its ${esc(a.L.stat)} part is not counted: add it to Skill % by hand</span>` : ""}`;
 }
 
 // ---- job picker: job icons grouped by family, like choosing a class in game
@@ -1391,7 +1400,7 @@ function renderJobGrid() {
   const tile = (id) => {
     const j = J[id];
     if (!j) return "";
-    return `<button type="button" class="job-tile ${String(id) === cur ? "on" : ""} ${j.hasSkills ? "" : "noskills"}" data-job="${id}" title="${esc(j.name)}${j.hasSkills ? "" : " (skills not out in SEA yet)"}">
+    return `<button type="button" class="job-tile ${String(id) === cur ? "on" : ""} ${j.hasSkills ? "" : "noskills"}" data-job="${id}" title="${esc(j.name)}${j.hasSkills ? "" : " (its own skills are not in the SEA game data yet; gear and the skills of the job before it still work)"}">
       ${j.img ? `<img src="img/${esc(j.img)}" alt="" loading="lazy">` : `<span class="job-any">?</span>`}<span>${esc(j.name)}</span></button>`;
   };
   // each family: base job, then every branch as a chain (2nd → transcendent → 3rd)
@@ -1455,44 +1464,62 @@ async function prepareImage(blob) {
 // character, so one read fills both: every stat goes to the Damage tab's
 // screen numbers, and M.ATK, P.ATK and Healing% also go to the Support tab.
 const SHOT = {
-  build: { file: "#shot-file", status: "#shot-status", review: "#shot-review", rows: [], seq: 0 },
-  support: { file: "#sup-shot-file", status: "#sup-shot-status", review: "#sup-shot-review", rows: [], seq: 0 },
+  build: { file: "#shot-file", status: "#shot-status", review: "#shot-review", rows: [], raw: [], seq: 0, chain: Promise.resolve() },
+  support: { file: "#sup-shot-file", status: "#sup-shot-status", review: "#sup-shot-review", rows: [], raw: [], seq: 0, chain: Promise.resolve() },
 };
 const SUP_SHOT_KEYS = ["matk", "atk", "heal"];
-async function readShot(blob, where = "build") {
+// The game splits its stats over more than one page, so screenshots add up:
+// each one is read in turn and its stats join the same list (a stat already
+// read keeps its first value). Cancel or apply starts a new list.
+function readShot(files, where = "build") {
+  const S = SHOT[where];
+  const seq = S.seq;
+  for (const blob of [...files].filter(Boolean)) S.chain = S.chain.then(() => readOne(blob, where, seq));
+}
+async function readOne(blob, where, seq) {
   const S = SHOT[where], status = $(S.status);
-  if (!blob || !/^image\//.test(blob.type)) { status.textContent = "That is not an image."; return; }
-  if (blob.size > 15 * 1024 * 1024) { status.textContent = "Image is too big (over 15 MB)."; return; }
-  const seq = ++S.seq; // a newer screenshot replaces this one
+  if (seq !== S.seq) return; // cancelled while waiting its turn
+  const skip = (why) => { status.textContent = S.rows.length ? `${status.textContent.replace(/ Skipped:.*$/, "")} Skipped: ${why}` : why; };
+  if (!/^image\//.test(blob.type || "")) return skip(`${blob.name || "a file"} is not an image.`);
+  if (blob.size > 15 * 1024 * 1024) return skip(`${blob.name || "an image"} is too big (over 15 MB).`);
+  const n = S.raw.length + 1;
   try {
-    status.textContent = ocrWorker ? "Reading the screenshot…" : "Loading the reader (about 7 MB, first time only)…";
+    status.textContent = ocrWorker ? `Reading screenshot ${n}…` : "Loading the reader (about 7 MB, first time only)…";
     const w = await ocr();
     if (seq !== S.seq) return;
-    status.textContent = "Reading the screenshot…";
+    status.textContent = `Reading screenshot ${n}…`;
     const { data } = await w.recognize(await prepareImage(blob));
     if (seq !== S.seq) return;
-    S.rows = parseStats(data.text).map((r) => ({ ...r, use: true }));
+    S.raw.push(data.text);
+    const have = new Set(S.rows.map((r) => r.key));
+    const fresh = parseStats(data.text).filter((r) => !have.has(r.key)).map((r) => ({ ...r, use: true, shot: n }));
+    S.rows.push(...fresh);
     if (where === "support") S.rows.sort((a, b) => SUP_SHOT_KEYS.includes(b.key) - SUP_SHOT_KEYS.includes(a.key));
     const mine = S.rows.filter((r) => SUP_SHOT_KEYS.includes(r.key)).length;
+    const shots = S.raw.length > 1 ? `${S.raw.length} screenshots: ` : "";
     status.textContent = !S.rows.length ? "No stats found. Try a sharper screenshot of just the stats panel, or type them in."
-      : where === "support" && !mine ? `Found ${S.rows.length} stats, but not M.ATK, P.ATK or Healing%. Type those in, or apply the rest to the Damage tab.`
-        : `Found ${S.rows.length} stats. Check them, fix any wrong number, then apply.`;
-    renderShotReview(where, data.text);
+      : `${shots}${shots ? "found" : "Found"} ${S.rows.length} stats${S.raw.length > 1 ? ` (${fresh.length} new from this one)` : ""}. ` +
+        (where === "support" && !mine ? "None of them is M.ATK, P.ATK or Healing%: add the page that has them, or type them in. "
+          : "Add another screenshot for the other stats page, or check them and apply.");
+    renderShotReview(where);
   } catch (err) {
     if (seq === S.seq) status.textContent = `Could not read it: ${err?.message || err}`;
   }
 }
-function renderShotReview(where, rawText) {
+function renderShotReview(where) {
   const S = SHOT[where];
-  const seen = rawText ? `<details class="note"><summary>What the reader saw</summary><pre>${esc(rawText)}</pre></details>` : "";
+  const focused = document.activeElement?.closest?.(S.review) ? document.activeElement.dataset.shotVal : null;
+  const seen = S.raw.length ? `<details class="note"><summary>What the reader saw</summary><pre>${esc(S.raw.map((t, i) => (S.raw.length > 1 ? `── screenshot ${i + 1} ──\n` : "") + t).join("\n"))}</pre></details>` : "";
   if (!S.rows.length) { $(S.review).innerHTML = seen; return; }
   $(S.review).innerHTML = `<table class="mid shot-table"><thead><tr><th></th><th>Stat</th><th class="num">Value</th><th>From the line</th></tr></thead><tbody>
     ${S.rows.map((r, i) => `<tr class="${where === "support" && SUP_SHOT_KEYS.includes(r.key) ? "hot" : ""}"><td><input type="checkbox" data-shot-use="${i}" ${r.use ? "checked" : ""}></td><td>${esc(statLabel(r.key))}</td>
       <td class="num"><input type="number" step="any" data-shot-val="${i}" value="${PCT_KEYS.test(r.key) ? +(r.value * 100).toFixed(2) : r.value}">${PCT_KEYS.test(r.key) ? "%" : ""}</td>
-      <td class="note">${esc(r.raw.slice(0, 60))}</td></tr>`).join("")}</tbody></table>
-    <div class="extra-add"><button type="button" data-shot-apply>✓ Use these</button><button type="button" data-shot-cancel>Cancel</button></div>
+      <td class="note">${S.raw.length > 1 ? `<span class="tag">#${r.shot}</span>` : ""}${esc(r.raw.slice(0, 60))}</td></tr>`).join("")}</tbody></table>
+    <div class="extra-add"><button type="button" data-shot-apply>✓ Use these</button><button type="button" data-shot-cancel>Cancel</button>
+      <label class="shot-more">＋ Add another screenshot<input type="file" accept="image/*" multiple hidden data-shot-more></label></div>
     ${where === "support" ? `<div class="note">Highlighted stats fill this tab; the others fill the Damage tab's character screen.</div>` : ""}
     ${seen}`;
+  if (focused != null) $(`${S.review} [data-shot-val="${focused}"]`)?.focus();
 }
 function applyShot(rows) {
   for (const r of rows) B.panel[r.key] = r.value;
@@ -1507,21 +1534,25 @@ function applyShot(rows) {
 }
 function setupShot() {
   for (const [where, S] of Object.entries(SHOT)) {
-    $(S.file).addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) readShot(f, where); e.target.value = ""; });
-    $(S.review).addEventListener("change", (e) => {
+    $(S.file).addEventListener("change", (e) => { readShot(e.target.files || [], where); e.target.value = ""; });
+    // "input" as well as "change": a number being typed is kept if another screenshot redraws the table
+    const keep = (e) => {
       const t = e.target;
+      if (t.dataset.shotMore != null) { if (e.type === "change") { readShot(t.files || [], where); t.value = ""; } return; }
       if (t.dataset.shotUse != null) S.rows[Number(t.dataset.shotUse)].use = t.checked;
       if (t.dataset.shotVal != null) {
         const r = S.rows[Number(t.dataset.shotVal)];
         const v = Number(t.value);
         if (Number.isFinite(v)) r.value = PCT_KEYS.test(r.key) ? v / 100 : v;
       }
-    });
+    };
+    $(S.review).addEventListener("input", keep);
+    $(S.review).addEventListener("change", keep);
     $(S.review).addEventListener("click", (e) => {
-      if (e.target.dataset.shotCancel != null) { S.seq++; S.rows = []; $(S.review).innerHTML = ""; $(S.status).textContent = ""; }
+      if (e.target.dataset.shotCancel != null) { S.seq++; S.rows = []; S.raw = []; $(S.review).innerHTML = ""; $(S.status).textContent = ""; }
       if (e.target.dataset.shotApply != null) {
         const use = S.rows.filter((r) => r.use);
-        S.rows = []; $(S.review).innerHTML = "";
+        S.seq++; S.rows = []; S.raw = []; $(S.review).innerHTML = ""; // screenshots still waiting are dropped
         const sup = applyShot(use);
         $(S.status).textContent = where === "support"
           ? `Applied ${sup} stat${sup === 1 ? "" : "s"} here${use.length > sup ? ` and ${use.length - sup} to the Damage tab` : ""}.`
@@ -1532,8 +1563,8 @@ function setupShot() {
   document.addEventListener("paste", (e) => {
     const where = $("#tab-build").classList.contains("on") ? "build" : $("#tab-support").classList.contains("on") ? "support" : null;
     if (!where) return;
-    const item = [...(e.clipboardData?.items || [])].find((x) => x.type.startsWith("image/"));
-    if (item) { e.preventDefault(); readShot(item.getAsFile(), where); }
+    const images = [...(e.clipboardData?.items || [])].filter((x) => x.type.startsWith("image/")).map((x) => x.getAsFile());
+    if (images.length) { e.preventDefault(); readShot(images, where); }
   });
 }
 
@@ -1694,7 +1725,7 @@ function setupSupport(data) {
   });
   tab.addEventListener("click", (e) => {
     const t = e.target.closest("[data-sup-job]");
-    if (!t || t.classList.contains("noskills")) return;
+    if (!t) return;
     SUP.job = t.dataset.supJob;
     renderSupportJobs();
     renderSupport();
@@ -1714,7 +1745,7 @@ function renderSupportJobs() {
   const tile = (id) => {
     const j = J[id];
     const heals = supSkills(chainOf(J, id)).some((s) => s.kind === "heal");
-    return `<button type="button" class="job-tile ${id === SUP.job ? "on" : ""} ${j.hasSkills ? "" : "noskills"}" data-sup-job="${id}" title="${esc(j.name)}${j.hasSkills ? "" : " (skills not out in SEA yet)"}">
+    return `<button type="button" class="job-tile ${id === SUP.job ? "on" : ""} ${j.hasSkills ? "" : "noskills"}" data-sup-job="${id}" title="${esc(j.name)}${j.hasSkills ? "" : " (its own skills are not in the SEA game data yet; gear and the skills of the job before it still work)"}">
       ${j.img ? `<img src="img/${esc(j.img)}" alt="" loading="lazy">` : `<span class="job-any">?</span>`}<span>${esc(j.name)}</span>${heals ? `<b class="heal-dot" title="heals">✚</b>` : ""}</button>`;
   };
   // each family's branches as chains, keeping only support jobs

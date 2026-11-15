@@ -1,7 +1,8 @@
 """Download the images listed in images.txt that are not on disk yet.
 
-usage: python3 -I scripts/get-images.py data/raw/images.txt web/img
-Four at a time, so rtnw.online sees a light load.
+usage: python3 -I scripts/get-images.py data/raw/images.txt web/img [https://other.site/media/images/]
+Four at a time, so the site sees a light load. rtnw.online unless another base is
+given (fetch-data.sh passes roworlddb.com for images_rdb.txt).
 """
 import os
 import sys
@@ -11,6 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 BASE = "https://rtnw.online/media/images/"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
 listing, out = sys.argv[1], sys.argv[2]
+if len(sys.argv) > 3:  # another site with the same /media/images/ layout
+    if not sys.argv[3].startswith("https://"):
+        sys.exit("base must be an https:// URL")
+    BASE = sys.argv[3].rstrip("/") + "/"
 ROOT = os.path.realpath(out)
 
 
@@ -36,7 +41,10 @@ def get(p):
     try:
         req = urllib.request.Request(BASE + p, headers={"User-Agent": UA})
         with urllib.request.urlopen(req, timeout=30) as r:
+            kind = r.headers.get("Content-Type", "")
             data = r.read()
+        if not kind.startswith("image/") or not data:
+            return f"{p}: not an image ({kind or 'no type'})"
         with open(dest + ".part", "wb") as f:
             f.write(data)
         os.replace(dest + ".part", dest)
