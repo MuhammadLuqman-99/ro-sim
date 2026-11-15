@@ -1,0 +1,10 @@
+{
+  "name": "ro-sim",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch": "./scripts/fetch-data.sh",
+    "serve": "./scripts/serve.sh",
+    "test": "node --test test/*.test.mjs"
+  }
+}

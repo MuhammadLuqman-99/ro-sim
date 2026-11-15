@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RO New World SEA · spend sim</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">RO New World <span>SEA</span> · spend sim</div>
+    <nav id="tabs">
+      <button data-tab="refine" class="on">Refine cost</button>
+      <button data-tab="cards">Cards</button>
+      <button data-tab="gear">Gear</button>
+      <button data-tab="shop">Shop in RM</button>
+    </nav>
+    <label class="rate">RM per Starstone
+      <input id="rm-per-star" type="number" step="0.0001" min="0">
+    </label>
+  </header>
+
+  <main>
+    <!-- REFINE -->
+    <section id="tab-refine" class="tab on">
+      <form id="refine-form" class="controls">
+        <label>From <select name="from"></select></label>
+        <label>To <select name="to"></select></label>
+        <label>Runs <select name="runs"><option>5000</option><option selected>20000</option><option>50000</option></select></label>
+        <label>Budget (RM) <input name="budget" type="number" min="0" step="10" value="200"></label>
+        <fieldset>
+          <legend>Already in bag</legend>
+          <label>Oridecon <input name="own-Oridecon" type="number" min="0" value="0"></label>
+          <label>Enriched <input name="own-Enriched Oridecon" type="number" min="0" value="0"></label>
+          <label>HD <input name="own-HD Oridecon" type="number" min="0" value="0"></label>
+        </fieldset>
+        <fieldset>
+          <legend>Legendary Ore (blessing)</legend>
+          <label><input name="blessing" type="checkbox"> use it</label>
+          <label>from + <input name="blessingFrom" type="number" min="0" max="19" value="7"></label>
+          <label>bonus (pp) <input name="blessingBonus" type="number" min="0" max="100" step="0.5" value="1"></label>
+        </fieldset>
+      </form>
+      <div id="refine-kpis" class="kpis"></div>
+      <div id="refine-table"></div>
+      <h3>What each +1 costs on average</h3>
+      <p class="note">Starting from that level, all bought with Starstones. Where it drops (downgrade) is included.</p>
+      <div id="refine-steps"></div>
+      <p class="note" id="refine-note"></p>
+    </section>
+
+    <!-- CARDS -->
+    <section id="tab-cards" class="tab">
+      <form id="cards-form" class="controls">
+        <label>Find <input name="q" type="search" placeholder="CRIT, ATK, Poring…"></label>
+        <label>Slot <select name="slot"><option value="">All</option></select></label>
+        <label>Quality <select name="q2"><option value="">All</option></select></label>
+        <label><input name="farm" type="checkbox"> drops from mobs only (no MVP)</label>
+      </form>
+      <div id="cards-count" class="note"></div>
+      <div id="cards-table"></div>
+    </section>
+
+    <!-- GEAR -->
+    <section id="tab-gear" class="tab">
+      <form id="gear-form" class="controls">
+        <label>Find <input name="q" type="search" placeholder="name or set"></label>
+        <label>Slot <select name="slot"><option value="">All</option></select></label>
+        <label>Job <select name="job"><option value="">Any</option></select></label>
+        <label>Quality <select name="q2"><option value="">All</option></select></label>
+        <label>Level ≤ <input name="lv" type="number" min="1" max="200" value="200"></label>
+        <label>Show at + <input name="refine" type="number" min="0" max="20" value="10"></label>
+        <label>Sort by <select name="sort"><option value="">Name</option></select></label>
+      </form>
+      <div id="gear-count" class="note"></div>
+      <div id="gear-table"></div>
+    </section>
+
+    <!-- SHOP -->
+    <section id="tab-shop" class="tab">
+      <form id="shop-form" class="controls">
+        <label>Find <input name="q" type="search" placeholder="Oridecon, Spirit Piece…"></label>
+        <label><input name="stars" type="checkbox" checked> Starstone items only</label>
+      </form>
+      <div id="shop-table"></div>
+    </section>
+  </main>
+
+  <footer>
+    Data: SEA client export via <a href="https://rtnw.online" target="_blank" rel="noopener">rtnw.online</a>,
+    fetched <span id="fetched-at">?</span>.
+    Fan-made tool, not affiliated with Gravity. Game names, art and icons belong to Gravity Co., Ltd.
+    Numbers are estimates, so check in game before you spend.
+  </footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

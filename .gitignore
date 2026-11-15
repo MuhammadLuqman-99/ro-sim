@@ -1,0 +1,5 @@
+# raw downloads are rebuilt by scripts/fetch-data.sh; web/data and web/img are
+# committed so the site deploys as plain static files with no build step.
+data/raw/
+.DS_Store
+node_modules/
